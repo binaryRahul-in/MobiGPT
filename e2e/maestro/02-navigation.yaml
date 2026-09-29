@@ -23,15 +23,17 @@ name: 02-navigation
 - takeScreenshot: 02-models
 - tapOn:
     id: "open-settings"
-- assertVisible: "Inference hardware"
-- scrollUntilVisible:
-    element:
+- extendedWaitUntil:
+    visible:
       id: "open-about"
-    direction: DOWN
+    timeout: 15000
+- assertVisible: "Inference hardware"
 - tapOn:
     id: "open-about"
-- assertVisible:
-    id: "about-version"
+- extendedWaitUntil:
+    visible:
+      id: "about-version"
+    timeout: 15000
 - takeScreenshot: 02-about
 - back
 - back

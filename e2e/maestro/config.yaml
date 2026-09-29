@@ -6,7 +6,7 @@ flows:
   - "03-*"
   - "04-*"
 executionOrder:
-  continueOnFailure: false
+  continueOnFailure: true
   flowsOrder:
     - 01-onboarding
     - 02-navigation

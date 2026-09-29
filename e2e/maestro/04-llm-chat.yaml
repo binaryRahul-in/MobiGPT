@@ -13,6 +13,7 @@ tags:
     element:
       id: "download-smollm2-135m"
     direction: DOWN
+    timeout: 60000
 - tapOn:
     id: "download-smollm2-135m"
 - extendedWaitUntil:

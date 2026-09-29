@@ -22,6 +22,22 @@ export const SettingsScreen = observer(function SettingsScreen({navigation}: Roo
 
   return (
     <Screen testID="settings-screen">
+      <Section title="General" icon="tune-variant">
+        <List.Item
+          title="Features"
+          description="Install / remove optional modules"
+          testID="open-features"
+          left={p => <List.Icon {...p} icon="puzzle-outline" />}
+          onPress={() => navigation.navigate('Features')}
+        />
+        <List.Item
+          title="About & updates"
+          left={p => <List.Icon {...p} icon="information-outline" />}
+          onPress={() => navigation.navigate('About')}
+          testID="open-about"
+        />
+      </Section>
+
       <Section title="Appearance" icon="palette-outline">
         <SegmentedButtons
           value={settings.themeMode}
@@ -158,18 +174,6 @@ export const SettingsScreen = observer(function SettingsScreen({navigation}: Roo
         <List.Item
           title="Check for app updates on start"
           right={() => <Switch value={settings.checkUpdatesOnLaunch} onValueChange={settings.setCheckUpdates} />}
-        />
-        <List.Item
-          title="Features"
-          description="Install / remove optional modules"
-          left={p => <List.Icon {...p} icon="puzzle-outline" />}
-          onPress={() => navigation.navigate('Features')}
-        />
-        <List.Item
-          title="About & updates"
-          left={p => <List.Icon {...p} icon="information-outline" />}
-          onPress={() => navigation.navigate('About')}
-          testID="open-about"
         />
       </Section>
 
