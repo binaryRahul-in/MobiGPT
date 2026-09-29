@@ -93,7 +93,7 @@ Findings:
 
 The chosen variant is built and parity-gated by `.github/workflows/publish-models.yml` and published as the
 `models-v1` release asset `contentvec_768l12_int8_pc.onnx`. The app downloads it first and falls back to the upstream
-file if the release is unreachable (for example while the repository is private).
+file if the release is unreachable (for example offline mirrors or a blocked github.com).
 
 | Component | Strategy | Metric | Gate |
 |---|---|---|---|

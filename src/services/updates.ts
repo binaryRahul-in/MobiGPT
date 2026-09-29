@@ -1,7 +1,8 @@
 import {compareVersions} from '../utils/format';
 
 export const REPO = 'binaryRahul-in/MobiGPT';
-export const RAW_BASE = `https://raw.githubusercontent.com/${REPO}/main`;
+// HEAD resolves to the default branch, whatever it is named.
+export const RAW_BASE = `https://raw.githubusercontent.com/${REPO}/HEAD`;
 
 export interface ReleaseInfo {
   version: string;
