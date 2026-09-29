@@ -20,7 +20,7 @@ namespace mobigpt::rvc {
 // Accelerator preference. Anything a platform cannot honour silently falls
 // back to the next best provider; the provider actually used is reported.
 enum class Accelerator {
-  Auto,     // NNAPI/CoreML when likely beneficial, else XNNPACK, else CPU
+  Auto,     // ORT CPU kernels (MLAS) everywhere; other providers are opt-in
   Cpu,      // default ORT CPU kernels (MLAS)
   Xnnpack,  // ARM/x86 optimised kernels, good for fp32 conv-heavy graphs
   Nnapi,    // Android GPU/DSP/NPU via NNAPI (deprecated in Android 15, still works)

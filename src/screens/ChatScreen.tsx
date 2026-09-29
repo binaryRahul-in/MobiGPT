@@ -27,28 +27,14 @@ export const ChatScreen = observer(function ChatScreen({navigation}: TabScreenPr
   const conv = chat.active;
   const messages = conv?.messages ?? [];
 
+  // Set once: the title observes the model store itself. Re-calling setOptions on every
+  // load-progress tick re-rendered the navigator header in a loop ("Maximum update depth").
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => <IconButton icon="history" accessibilityLabel="Conversations" onPress={() => navigation.navigate('History')} />,
-      headerTitle: () => (
-        <Pressable onPress={() => navigation.navigate('Models')} style={styles.titleRow} testID="chat-model-chip">
-          <Logo size={24} />
-          <View>
-            <Text variant="titleMedium" style={styles.bold}>
-              MobiGPT
-            </Text>
-            <Text
-              variant="labelSmall"
-              style={{color: models.loaded ? theme.colors.secondary : theme.colors.onSurfaceVariant}}
-              numberOfLines={1}
-            >
-              {models.loading ? `Loading… ${Math.round(models.loadProgress * 100)}%` : models.loaded?.name ?? 'No model loaded'}
-            </Text>
-          </View>
-        </Pressable>
-      ),
+      headerTitle: () => <ChatHeaderTitle onPress={() => navigation.navigate('Models')} />,
     });
-  }, [navigation, models.loaded, models.loading, models.loadProgress, theme]);
+  }, [navigation]);
 
   const send = async (value?: string) => {
     const t = (value ?? text).trim();
@@ -151,6 +137,28 @@ export const ChatScreen = observer(function ChatScreen({navigation}: TabScreenPr
         {error}
       </Snackbar>
     </KeyboardAvoidingView>
+  );
+});
+
+const ChatHeaderTitle = observer(function ChatHeaderTitle({onPress}: {onPress: () => void}) {
+  const theme = useTheme();
+  const {models} = useStores();
+  return (
+    <Pressable onPress={onPress} style={styles.titleRow} testID="chat-model-chip">
+      <Logo size={24} />
+      <View>
+        <Text variant="titleMedium" style={styles.bold}>
+          MobiGPT
+        </Text>
+        <Text
+          variant="labelSmall"
+          style={{color: models.loaded ? theme.colors.secondary : theme.colors.onSurfaceVariant}}
+          numberOfLines={1}
+        >
+          {models.loading ? `Loading… ${Math.round(models.loadProgress * 100)}%` : models.loaded?.name ?? 'No model loaded'}
+        </Text>
+      </View>
+    </Pressable>
   );
 });
 

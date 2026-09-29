@@ -42,7 +42,7 @@ Source: `packages/react-native-mobigpt-voice/cpp/rvc/`
 | **Tensors stay in C++** | JS only sends paths and configuration. HuBERT, pitch and net_g tensors never leave C++, and PCM goes directly to `AudioTrack` (via JNI from the worker thread) or `AVAudioPlayerNode`. | No JS↔native serialisation and no GC pressure. |
 | **Sequential loading** | `LoadStrategy::Sequential` runs every window through the encoder first (features stored as fp16), then pitch, then the synthesizer. Only one model is resident at a time. | Peak RAM ≈ the largest single model. This is the default on phones with less than 4 GB. |
 | **Low-memory sessions** | `SessionConfig.lowMemory` disables ORT's CPU arena and memory patterns. | Lower resident memory between runs, at 5–15 % lower speed. |
-| **Accelerators** | Auto uses XNNPACK on Android and MLAS on iOS. Optional: NNAPI, QNN (Hexagon, needs the QNN build flavour) and Core ML. | Any provider that fails falls back to CPU, and the reason is shown in the UI. |
+| **Accelerators** | Auto uses ONNX Runtime's CPU kernels (MLAS: NEON/dotprod on ARM64) on every platform. XNNPACK, NNAPI, QNN (Hexagon, needs the QNN build flavour) and Core ML are opt-in. XNNPACK was the Android default until the emulator e2e run caught it crashing inside ORT session creation for an RVC voice. | A provider that reports an error falls back to CPU, and the reason is shown in the UI. A crash inside ORT cannot fall back, which is why risky providers are opt-in. |
 
 ## Supported model formats
 
@@ -131,7 +131,7 @@ It also keeps the `pitchf → Sin/Cos/CumSum` phase path in FP32. `tools/rvc/tes
 | **Real-time factor** | 2.9× | 2.3× |
 
 The synthesizer dominates. The DSP pitch trackers remove almost all of the pitch cost, which matters most on low-end phones.
-Phones with 8 ARM cores and XNNPACK are expected to run 2–4× faster than this shared runner. **Benchmarks → Voice**
+Phones with 8 ARM cores are expected to run 2–4× faster than this shared runner. **Benchmarks → Voice**
 measures the real figure on each device, and live mode shows a warning whenever RTF ≥ 1.
 
 ## Converting your own voices

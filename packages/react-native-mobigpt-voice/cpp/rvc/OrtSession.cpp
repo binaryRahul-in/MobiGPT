@@ -78,12 +78,13 @@ int defaultThreads() {
 std::string appendProvider(Ort::SessionOptions& so, Accelerator want, const SessionConfig& cfg,
                            std::vector<std::string>& warnings) {
   const int threads = cfg.intraOpThreads > 0 ? cfg.intraOpThreads : defaultThreads();
+  // Auto = ORT's own CPU kernels (MLAS: NEON/dotprod on ARM64, AVX2 on x86) on every
+  // platform. XNNPACK used to be the Android default, but session creation for RVC
+  // voices segfaulted inside ONNX Runtime on the Android emulator (null dereference
+  // below Ort::Session::Session), and a native crash cannot be caught and fall back.
+  // Every other provider is an explicit, opt-in choice.
   if (want == Accelerator::Auto) {
-#if defined(__ANDROID__)
-    want = Accelerator::Xnnpack;
-#else
     want = Accelerator::Cpu;
-#endif
   }
   try {
     switch (want) {

@@ -190,9 +190,14 @@ export const FEATURES: FeatureDefinition[] = [
         description: 'ONNX Runtime execution provider. Unsupported choices fall back to CPU automatically.',
         type: 'choice',
         choices: [
-          {value: 'auto', label: 'Auto', description: 'XNNPACK on Android, CPU (MLAS) on iOS.'},
+          {value: 'auto', label: 'Auto', description: 'ONNX Runtime CPU kernels (NEON/dotprod on ARM). The most reliable choice.'},
           {value: 'cpu', label: 'CPU (MLAS)'},
-          {value: 'xnnpack', label: 'XNNPACK', description: 'Optimised ARM/x86 kernels.'},
+          {
+            value: 'xnnpack',
+            label: 'XNNPACK (experimental)',
+            description:
+              'Alternative ARM/x86 kernels. Can crash the app while loading some voices (seen with ONNX Runtime 1.24 on Android).',
+          },
           {
             value: 'nnapi',
             label: 'NNAPI (GPU/DSP)',
