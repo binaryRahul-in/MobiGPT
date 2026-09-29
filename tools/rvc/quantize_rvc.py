@@ -209,11 +209,7 @@ def quantize(kind: str, src: str, dst: str, ops: list[str] | None, per_channel: 
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     if kind == "synth":
-        from onnxconverter_common import float16
-
-        m = onnx.load(src)
-        m16 = float16.convert_float_to_float16(m, keep_io_types=True, op_block_list=["RandomNormalLike", "Range", "CumSum"])
-        onnx.save(m16, dst)
+        to_fp16(src, dst, op_block_list=["RandomNormalLike"], keep_fp32_from=["pitchf"])
         return
     default_ops = {"encoder": ["MatMul", "Gemm"], "rmvpe": ["MatMul", "Gemm"], "fcpe": ["MatMul", "Gemm"]}[kind]
     nodes_to_exclude = []
@@ -222,6 +218,106 @@ def quantize(kind: str, src: str, dst: str, ops: list[str] | None, per_channel: 
         nodes_to_exclude = [n.name for n in m.graph.node if any(e in n.name for e in exclude)]
     quantize_dynamic(src, dst, weight_type=QuantType.QInt8, per_channel=per_channel, reduce_range=reduce_range,
                      op_types_to_quantize=ops or default_ops, nodes_to_exclude=nodes_to_exclude)
+
+
+def to_fp16(src: str, dst: str, op_block_list: list[str] | None = None, keep_fp32_from: list[str] | None = None) -> None:
+    """FP16 weights and compute, FP32 graph I/O.
+
+    op_block_list extends the converter's default list of ops kept in FP32.
+    keep_fp32_from names graph inputs whose path to a Sin/Cos/CumSum stays FP32:
+    for net_g that is `pitchf`, i.e. RVC's SineGen harmonic source, which
+    accumulates phase over tens of thousands of samples and drifts audibly in
+    FP16 (RVC's own half-precision mode keeps it in FP32 too).
+
+    Two converter defects are repaired afterwards: the graph's own Cast(to=FLOAT)
+    nodes are left pointing at FLOAT while their outputs are retyped to float16
+    (HuBERT's attention mask), and graph outputs that are also consumed inside
+    the graph keep feeding the FP32 copy to FP16 nodes (w-okada encoders).
+    """
+    from onnxconverter_common import float16
+
+    src_model = onnx.load(src)
+    if any(i.data_type == onnx.TensorProto.FLOAT16 for i in src_model.graph.initializer) and not any(
+            i.data_type == onnx.TensorProto.FLOAT for i in src_model.graph.initializer):
+        raise ValueError(f"{src} is already an FP16 model")
+    for i, n in enumerate(src_model.graph.node):
+        if not n.name:
+            n.name = f"{n.op_type}_{i}"
+    blocked_nodes = _nodes_between(src_model.graph, keep_fp32_from or [], {"Sin", "Cos", "CumSum"})
+    ops = sorted(set(float16.DEFAULT_OP_BLOCK_LIST) | set(op_block_list or []))
+    m = float16.convert_float_to_float16(src_model, keep_io_types=True, op_block_list=ops, node_block_list=blocked_nodes)
+    fixed = _fix_fp16_casts(m.graph) + _rewire_output_consumers(m.graph)
+    if blocked_nodes:
+        print(f"fp16: kept {len(blocked_nodes)} node(s) of the pitch/phase path in FP32")
+    if fixed:
+        print(f"fp16: repaired {fixed} node(s) left inconsistent by the converter")
+    onnx.save(m, dst)
+
+
+def _nodes_between(graph, inputs: list[str], sink_ops: set[str]) -> list[str]:
+    """Names of nodes on any path from the given graph inputs to a node of sink_ops (inclusive)."""
+    if not inputs:
+        return []
+    consumers: dict[str, list] = {}
+    producer = {}
+    for n in graph.node:
+        for t in n.input:
+            consumers.setdefault(t, []).append(n)
+        for t in n.output:
+            producer[t] = n
+    forward, stack = set(), list(inputs)
+    while stack:
+        for n in consumers.get(stack.pop(), []):
+            if n.name not in forward:
+                forward.add(n.name)
+                stack.extend(n.output)
+    backward, stack = set(), [n for n in graph.node if n.op_type in sink_ops and n.name in forward]
+    while stack:
+        n = stack.pop()
+        if n.name in backward:
+            continue
+        backward.add(n.name)
+        stack.extend(producer[t] for t in n.input if t in producer)
+    return sorted(forward & backward)
+
+
+def _rewire_output_consumers(graph) -> int:
+    """keep_io_types appends `out = Cast(fp16 -> fp32)` for every graph output, but
+    nodes that also consume `out` inside the graph (w-okada encoders feed unit12
+    into units9 and unit12s) keep reading the fp32 copy. Point them at the fp16 one."""
+    types = {v.name: v.type.tensor_type.elem_type for v in graph.value_info}
+    producer = {o: n for n in graph.node for o in n.output}
+    fixed = 0
+    for out in graph.output:
+        cast = producer.get(out.name)
+        if cast is None or cast.op_type != "Cast" or types.get(cast.input[0]) != onnx.TensorProto.FLOAT16:
+            continue
+        for n in graph.node:
+            if n is cast:
+                continue
+            for k, name in enumerate(n.input):
+                if name == out.name:
+                    n.input[k] = cast.input[0]
+                    fixed += 1
+    return fixed
+
+
+def _fix_fp16_casts(graph) -> int:
+    types = {v.name: v.type.tensor_type.elem_type for v in list(graph.value_info) + list(graph.output)}
+    fixed = 0
+    for n in graph.node:
+        for a in n.attribute:
+            if a.type == onnx.AttributeProto.GRAPH:
+                fixed += _fix_fp16_casts(a.g)
+            elif a.type == onnx.AttributeProto.GRAPHS:
+                fixed += sum(_fix_fp16_casts(g) for g in a.graphs)
+        if n.op_type != "Cast" or types.get(n.output[0]) != onnx.TensorProto.FLOAT16:
+            continue
+        to = next(a for a in n.attribute if a.name == "to")
+        if to.i == onnx.TensorProto.FLOAT:
+            to.i = onnx.TensorProto.FLOAT16
+            fixed += 1
+    return fixed
 
 
 ENCODER_VARIANTS = [
@@ -246,9 +342,7 @@ def sweep_encoder(src: str, out_dir: str, audio: np.ndarray) -> list[dict]:
         dst = os.path.join(out_dir, f"encoder_v{i}.onnx")
         try:
             if kw is None:
-                from onnxconverter_common import float16
-
-                onnx.save(float16.convert_float_to_float16(onnx.load(src), keep_io_types=True), dst)
+                to_fp16(src, dst)
             else:
                 quantize("encoder", src, dst, None, **kw)
             par = parity_encoder(src, dst, audio)

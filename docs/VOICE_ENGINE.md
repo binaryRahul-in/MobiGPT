@@ -99,7 +99,14 @@ file if the release is unreachable (for example while the repository is private)
 |---|---|---|---|
 | ContentVec / HuBERT | dynamic INT8, MatMul/Gemm, per-channel, reduce_range | frame-wise cosine vs FP32 | mean > 0.97, p5 > 0.90 |
 | RMVPE / FCPE | dynamic INT8 MatMul/Gemm | F0 error in cents, voicing agreement | p95 < 50 cents, V/UV > 95 % |
-| net_g (voice) | FP16 weights, fp32 I/O (INT8 makes the vocoder sound metallic) | log-mel RMSE | < 0.5 |
+| net_g (voice) | FP16 weights, fp32 I/O, pitch→phase path (SineGen) kept FP32 (INT8 makes the vocoder sound metallic) | log-mel RMSE | < 0.5 |
+
+`quantize_rvc.py` repairs two defects of `onnxconverter-common` that otherwise produce models ONNX Runtime refuses to load:
+the graph's own `Cast(to=FLOAT)` nodes (HuBERT's attention mask) keep targeting FP32 while their outputs are retyped, and graph outputs
+that are also consumed internally (w-okada's `unit12 → units9`) keep feeding FP32 to FP16 nodes. For voices, every node on a path from
+`pitchf` to a `Sin`/`Cos`/`CumSum` stays FP32, because phase accumulated over a whole chunk in FP16 drifts (0.44 relative error on the
+test vocoder, versus 1.6e-4 with the path kept in FP32). `tools/rvc/test_quantize.py` converts every supported layout to FP16 and INT8 in CI,
+and checks that each result loads and matches the original.
 
 ### Where the time goes (x86 CI runner, 4 vCPU, 6 s of speech, 2.5 s chunks)
 
