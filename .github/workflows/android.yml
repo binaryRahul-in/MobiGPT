@@ -143,7 +143,8 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          cores: 2
+          # Voice Studio requires 4+ cores (features/registry.ts); fewer would block it in flow 03.
+          cores: 4
           profile: pixel_6
           ram-size: 4096M
           disk-size: 6000M

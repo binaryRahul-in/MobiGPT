@@ -1,6 +1,7 @@
 import {observer} from 'mobx-react-lite';
 import React, {useEffect, useRef, useState} from 'react';
 import {FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import {useHeaderHeight} from '@react-navigation/elements';
 import {Button, Chip, IconButton, Snackbar, Text, TextInput, useTheme} from 'react-native-paper';
 
 import {Logo} from '../brand/Logo';
@@ -18,6 +19,7 @@ const SUGGESTIONS = [
 
 export const ChatScreen = observer(function ChatScreen({navigation}: TabScreenProps<'Chat'>) {
   const theme = useTheme();
+  const headerHeight = useHeaderHeight();
   const {chat, models} = useStores();
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -85,8 +87,9 @@ export const ChatScreen = observer(function ChatScreen({navigation}: TabScreenPr
   return (
     <KeyboardAvoidingView
       style={[styles.flex, {backgroundColor: theme.colors.background}]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={90}
+      // Edge-to-edge Android ignores adjustResize, so both platforms pad above the keyboard.
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
       <FlatList
         ref={listRef}

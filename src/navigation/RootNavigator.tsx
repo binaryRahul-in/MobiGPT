@@ -49,6 +49,8 @@ const MainTabs = observer(function MainTabs() {
         tabBarStyle: {backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline},
         tabBarIcon: ({focused, color, size}) => <Icon source={TAB_ICONS[route.name][focused ? 0 : 1]} color={color} size={size} />,
         tabBarButtonTestID: `tab-${route.name.toLowerCase()}`,
+        // Keep the chat composer directly above the keyboard instead of above the tab bar.
+        tabBarHideOnKeyboard: true,
       })}
     >
       <Tabs.Screen name="Chat" component={ChatScreen} options={{title: 'Chat'}} />
