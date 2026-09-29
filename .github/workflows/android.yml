@@ -3,7 +3,18 @@ name: Android
 on:
   push:
     branches: ['**']
-    paths-ignore: ['**.md', 'docs/**']
+    # tools/ (model conversion) and the other workflows cannot change the APK.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'tools/**'
+      - 'ios/**'
+      - 'packages/*/ios/**'
+      - 'packages/*/tests/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/ios.yml'
+      - '.github/workflows/publish-models.yml'
+      - '.github/workflows/release.yml'
   pull_request:
   workflow_dispatch:
 
