@@ -77,9 +77,6 @@ jobs:
 
   native-core-macos:
     name: C++ engine · macos-15
-    # macOS minutes cost 10x on private repos: PRs, manual and weekly runs only
-    # (the iOS workflow already compiles the same C++ for every relevant push).
-    if: github.event_name != 'push'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
