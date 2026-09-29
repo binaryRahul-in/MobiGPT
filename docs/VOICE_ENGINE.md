@@ -70,26 +70,49 @@ The C++ tests (`tests/`, 29 cases, run on Linux, macOS and under ASan+UBSan in C
 
 The `rvc-real-models` CI job then downloads real community models and runs espeak-ng speech through the engine CLI with every pitch method. It checks duration, loudness and that the output F0 follows the input (including +12 semitones), and publishes the audio as an artifact.
 
-## INT8 quantisation analysis
+## INT8 quantisation analysis (measured)
 
-Blind dynamic INT8 of ContentVec is harmful. voiceclonnx measured 38 % → 69 % WER on RVC. The damage comes from the convolutional feature extractor and the positional convolution, whose activations have large outliers.
+Blind dynamic INT8 of ContentVec is known to hurt: voiceclonnx measured RVC's WER going from 38 % to 69 %.
+MobiGPT's CI (`rvc-real-models` job) now **measures** every strategy against FP32 features on the same speech
+(espeak-ng, 6 s) using `tools/rvc/quantize_rvc.py sweep`:
 
-MobiGPT's `tools/rvc/quantize_rvc.py` quantises selectively and measures the result:
+| ContentVec 768 variant | Size | Mean cosine | p5 cosine | Verdict |
+|---|---|---|---|---|
+| FP32 (reference) | 378 MB | 1.000 | 1.000 | — |
+| **INT8 MatMul, per-channel, reduce_range (MobiGPT default)** | **122 MB** | **0.986** | **0.991** | ✅ shipped |
+| INT8 with first/last 2 transformer layers in FP32 | 207 MB | 0.995 | 0.997 | ✅ highest fidelity |
+| INT8 FFN-only (attention FP32) | 207 MB | 0.987 | 0.992 | ✅ |
+| INT8 MatMul per-tensor, reduce_range | 122 MB | 0.974 | 0.965 | ✅ |
+| upstream voiceclonnx `_q8` | 95 MB | 0.887 | 0.541 | ❌ fails gate |
+| INT8 MatMul per-channel, full 8-bit range | 122 MB | 0.389 | 0.221 | ❌ saturates on x86 without VNNI |
 
-| Component | Strategy | Metric reported | Pass threshold |
+Findings:
+* **Per-channel weights plus 7-bit range** is the sweet spot: 3.1× smaller than FP32, with essentially identical features.
+* **Full-range INT8 collapses on x86 CPUs without VNNI**, because U8S8 multiply-accumulates saturate. ARM phones don't saturate, but `reduce_range` costs nothing measurable, so it is used everywhere.
+* **The upstream `_q8` misses the gate.** Its 5th-percentile cosine of 0.54 means some frames are badly distorted, which fits the WER regression voiceclonnx reported.
+
+The chosen variant is built and parity-gated by `.github/workflows/publish-models.yml` and published as the
+`models-v1` release asset `contentvec_768l12_int8_pc.onnx`. The app downloads it first and falls back to the upstream
+file if the release is unreachable (for example while the repository is private).
+
+| Component | Strategy | Metric | Gate |
 |---|---|---|---|
-| ContentVec / HuBERT | dynamic INT8, **MatMul/Gemm only**, per-channel (transformer ≈ 85 % of weights; conv front-end kept fp32) | frame-wise cosine similarity vs FP32 | mean > 0.97, p5 > 0.90 |
-| RMVPE | dynamic INT8 MatMul/Gemm (optionally GRU) | F0 error in cents, voicing agreement | p95 < 50 cents, V/UV > 95 % |
-| FCPE | dynamic INT8 MatMul/Gemm | same as RMVPE | same |
-| net_g (voice) | **FP16 weights, fp32 I/O** (INT8 makes the HiFi-GAN-style decoder sound metallic) | log-mel RMSE | < 0.5 |
+| ContentVec / HuBERT | dynamic INT8, MatMul/Gemm, per-channel, reduce_range | frame-wise cosine vs FP32 | mean > 0.97, p5 > 0.90 |
+| RMVPE / FCPE | dynamic INT8 MatMul/Gemm | F0 error in cents, voicing agreement | p95 < 50 cents, V/UV > 95 % |
+| net_g (voice) | FP16 weights, fp32 I/O (INT8 makes the vocoder sound metallic) | log-mel RMSE | < 0.5 |
 
-```bash
-python tools/rvc/quantize_rvc.py analyze contentvec_768l12.onnx            # op histogram + weight share per op
-python tools/rvc/quantize_rvc.py quantize --kind encoder --audio me.wav contentvec.onnx contentvec_q8.onnx --report r.json
-python tools/rvc/quantize_rvc.py quantize --kind synth voice.onnx voice_fp16.onnx
-```
+### Where the time goes (x86 CI runner, 4 vCPU, 6 s of speech, 2.5 s chunks)
 
-In CI, the real-model job quantises the FP32 ContentVec with this selective strategy and compares it with the upstream `_q8` file. Both are scored by cosine similarity against FP32 features on the same speech, and the table is written to the job summary.
+| Stage | RMVPE run | DIO run |
+|---|---|---|
+| ContentVec INT8 | 3.0 s | 3.1 s |
+| Pitch | 3.5 s (RMVPE INT8) | 0.09 s (DIO) |
+| net_g (community FP32 voice, 110 MB) | 10.9 s | 10.8 s |
+| **Real-time factor** | 2.9× | 2.3× |
+
+The synthesizer dominates. The DSP pitch trackers remove almost all of the pitch cost, which matters most on low-end phones.
+Phones with 8 ARM cores and XNNPACK are expected to run 2–4× faster than this shared runner. **Benchmarks → Voice**
+measures the real figure on each device, and live mode shows a warning whenever RTF ≥ 1.
 
 ## Converting your own voices
 
