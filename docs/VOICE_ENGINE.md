@@ -99,14 +99,26 @@ file if the release is unreachable (for example while the repository is private)
 |---|---|---|---|
 | ContentVec / HuBERT | dynamic INT8, MatMul/Gemm, per-channel, reduce_range | frame-wise cosine vs FP32 | mean > 0.97, p5 > 0.90 |
 | RMVPE / FCPE | dynamic INT8 MatMul/Gemm | F0 error in cents, voicing agreement | p95 < 50 cents, V/UV > 95 % |
-| net_g (voice) | FP16 weights, fp32 I/O, pitch→phase path (SineGen) kept FP32 (INT8 makes the vocoder sound metallic) | log-mel RMSE | < 0.5 |
+| net_g (voice) | FP16 weight storage, FP32 compute (INT8 makes the vocoder sound metallic) | audible-band dB error vs FP32 | at run-to-run noise |
 
-`quantize_rvc.py` repairs two defects of `onnxconverter-common` that otherwise produce models ONNX Runtime refuses to load:
-the graph's own `Cast(to=FLOAT)` nodes (HuBERT's attention mask) keep targeting FP32 while their outputs are retyped, and graph outputs
-that are also consumed internally (w-okada's `unit12 → units9`) keep feeding FP32 to FP16 nodes. For voices, every node on a path from
-`pitchf` to a `Sin`/`Cos`/`CumSum` stays FP32, because phase accumulated over a whole chunk in FP16 drifts (0.44 relative error on the
-test vocoder, versus 1.6e-4 with the path kept in FP32). `tools/rvc/test_quantize.py` converts every supported layout to FP16 and INT8 in CI,
-and checks that each result loads and matches the original.
+**Voices: FP16 weights, FP32 compute.** Measured on an RVC v2 40 kHz `net_g` exported with `export_voice_onnx.py`, on the same inputs:
+
+| Voice variant | Size | x86 CPU time | Audible-band error vs FP32 |
+|---|---|---|---|
+| FP32 | 110 MB | 605 ms | 0.07 dB between consecutive FP32 runs (SineGen draws fresh noise) |
+| **FP16 weights, FP32 compute** (`quantize --kind synth`, `export --fp16`) | **56 MB** | 680 ms | **0.1–0.4 dB** · waveform corr 0.9999+ |
+| Full FP16 compute | 56 MB | 939 ms | 4.6 dB · corr 0.995 |
+
+Weights are stored as FP16, each followed by a `Cast` to FP32 that ONNX Runtime folds away when the session is created. The download halves
+and the change is at the level of the vocoder's own noise. CI (`tools/rvc/ci_export_voice.py`) exports a voice with the real RVC model code both ways
+and gates the difference at 1 dB. Full FP16 compute is both less accurate and slower on CPUs without native FP16 arithmetic, so it is only kept for
+encoder experiments (`to_fp16`). That path repairs several `onnxconverter-common` defects that otherwise produce models ONNX Runtime refuses to load:
+* graph-internal `Cast(to=FLOAT)` nodes whose outputs the converter retyped (HuBERT's attention mask);
+* graph outputs that are also consumed inside the graph (w-okada's `unit12 → units9`);
+* `RandomUniform`/`RandomNormal` (RVC's SineGen noise), which have no FP16 CPU kernel and so stay FP32 behind a `Cast`;
+* `ConstantOfShape` fill values.
+
+It also keeps the `pitchf → Sin/Cos/CumSum` phase path in FP32. `tools/rvc/test_quantize.py` runs every supported layout through FP16 and INT8 in CI.
 
 ### Where the time goes (x86 CI runner, 4 vCPU, 6 s of speech, 2.5 s chunks)
 
@@ -125,7 +137,9 @@ measures the real figure on each device, and live mode shows a warning whenever 
 
 ```bash
 git clone https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI rvc
-python tools/rvc/export_voice_onnx.py --rvc-repo rvc my_voice.pth my_voice.onnx --fp16
+git -C rvc checkout 7ef1986   # RVC 2.3 removed the ONNX model definitions; this is the last commit with them (and with the export fix)
+pip install torch onnx onnxconverter-common
+python tools/rvc/export_voice_onnx.py --rvc-repo rvc my_voice.pth my_voice.onnx --fp16   # --fp16: half-size weights, same quality
 ```
 
 Import the `.onnx` in **Voice → Library → Mine → Import**, or push it to a Hugging Face repo and use **Hub** search.

@@ -25,7 +25,7 @@ Usage
 -----
   python quantize_rvc.py analyze  model.onnx
   python quantize_rvc.py quantize --kind encoder model.onnx out_q8.onnx [--audio speech.wav] [--report r.json]
-  python quantize_rvc.py quantize --kind synth   voice.onnx voice_fp16.onnx
+  python quantize_rvc.py quantize --kind synth   voice.onnx voice_fp16.onnx   (FP16 weights, FP32 compute)
 
 Requires: numpy, onnx, onnxruntime; optional soundfile, onnxconverter-common (fp16).
 """
@@ -40,6 +40,7 @@ import time
 
 import numpy as np
 import onnx
+from onnx import numpy_helper
 import onnxruntime as ort
 
 SR = 16000
@@ -209,7 +210,7 @@ def quantize(kind: str, src: str, dst: str, ops: list[str] | None, per_channel: 
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     if kind == "synth":
-        to_fp16(src, dst, op_block_list=["RandomNormalLike"], keep_fp32_from=["pitchf"])
+        fp16_weights(src, dst)
         return
     default_ops = {"encoder": ["MatMul", "Gemm"], "rmvpe": ["MatMul", "Gemm"], "fcpe": ["MatMul", "Gemm"]}[kind]
     nodes_to_exclude = []
@@ -218,6 +219,34 @@ def quantize(kind: str, src: str, dst: str, ops: list[str] | None, per_channel: 
         nodes_to_exclude = [n.name for n in m.graph.node if any(e in n.name for e in exclude)]
     quantize_dynamic(src, dst, weight_type=QuantType.QInt8, per_channel=per_channel, reduce_range=reduce_range,
                      op_types_to_quantize=ops or default_ops, nodes_to_exclude=nodes_to_exclude)
+
+
+def fp16_weights(src: str, dst: str, min_elems: int = 1024) -> int:
+    """FP16 weight storage, FP32 compute: the voice (net_g) default.
+
+    Every large FP32 initializer is stored as FP16 and followed by a Cast back to
+    FP32, which ONNX Runtime constant-folds when the session is created. Measured on
+    an exported RVC v2 40 kHz net_g, relative to FP32:
+      FP16 weights, FP32 compute   110 -> 56 MB   0.1-0.4 dB audible-band error  ~1.1x time
+      full FP16 compute (to_fp16)  110 -> 56 MB   4.6 dB audible-band error      ~1.5x time on x86
+    so the download halves without touching quality. Returns the number of tensors converted.
+    """
+    m = onnx.load(src)
+    casts = []
+    for init in m.graph.initializer:
+        if init.data_type != onnx.TensorProto.FLOAT:
+            continue
+        arr = numpy_helper.to_array(init)
+        if arr.size < min_elems or not np.isfinite(arr).all() or np.abs(arr).max() > 65000:
+            continue
+        name = init.name
+        init.CopyFrom(numpy_helper.from_array(arr.astype(np.float16), name + "__fp16"))
+        casts.append(onnx.helper.make_node("Cast", [name + "__fp16"], [name], to=onnx.TensorProto.FLOAT, name=name + "__to_fp32"))
+    nodes = casts + list(m.graph.node)
+    del m.graph.node[:]
+    m.graph.node.extend(nodes)
+    onnx.save(m, dst)
+    return len(casts)
 
 
 def to_fp16(src: str, dst: str, op_block_list: list[str] | None = None, keep_fp32_from: list[str] | None = None) -> None:
@@ -302,21 +331,55 @@ def _rewire_output_consumers(graph) -> int:
     return fixed
 
 
+# Generators whose CPU kernels only produce float/double (no FP16): they stay FP32 and
+# a Cast to FP16 follows them. RVC's SineGen draws its noise with RandomUniform/RandomNormal.
+_FP32_GENERATORS = {"RandomUniform", "RandomNormal", "RandomUniformLike", "RandomNormalLike", "EyeLike"}
+
+
 def _fix_fp16_casts(graph) -> int:
+    """Make type-carrying attributes agree with the float16 output types the converter recorded.
+
+    Cast(to=FLOAT) is retargeted to FLOAT16 (HuBERT's attention mask), ConstantOfShape gets an
+    FP16 fill value, and FP32-only generators are followed by an explicit Cast to FP16.
+    """
     types = {v.name: v.type.tensor_type.elem_type for v in list(graph.value_info) + list(graph.output)}
     fixed = 0
+    nodes = []
     for n in graph.node:
+        nodes.append(n)
         for a in n.attribute:
             if a.type == onnx.AttributeProto.GRAPH:
                 fixed += _fix_fp16_casts(a.g)
             elif a.type == onnx.AttributeProto.GRAPHS:
                 fixed += sum(_fix_fp16_casts(g) for g in a.graphs)
-        if n.op_type != "Cast" or types.get(n.output[0]) != onnx.TensorProto.FLOAT16:
+        if not n.output or types.get(n.output[0]) != onnx.TensorProto.FLOAT16:
             continue
-        to = next(a for a in n.attribute if a.name == "to")
-        if to.i == onnx.TensorProto.FLOAT:
-            to.i = onnx.TensorProto.FLOAT16
+        if n.op_type == "Cast":
+            to = next(a for a in n.attribute if a.name == "to")
+            if to.i == onnx.TensorProto.FLOAT:
+                to.i = onnx.TensorProto.FLOAT16
+                fixed += 1
+        elif n.op_type == "ConstantOfShape":
+            val = next((a for a in n.attribute if a.name == "value"), None)
+            if val is None:  # default fill is an FP32 zero
+                n.attribute.append(onnx.helper.make_attribute("value", numpy_helper.from_array(np.zeros(1, np.float16))))
+                fixed += 1
+            elif val.t.data_type == onnx.TensorProto.FLOAT:
+                val.t.CopyFrom(numpy_helper.from_array(numpy_helper.to_array(val.t).astype(np.float16), val.t.name))
+                fixed += 1
+        elif n.op_type in _FP32_GENERATORS:
+            dtype = next((a for a in n.attribute if a.name == "dtype"), None)
+            if dtype is None:
+                n.attribute.append(onnx.helper.make_attribute("dtype", onnx.TensorProto.FLOAT))
+            else:
+                dtype.i = onnx.TensorProto.FLOAT
+            out = n.output[0]
+            n.output[0] = out + "_fp32"
+            nodes.append(onnx.helper.make_node("Cast", [n.output[0]], [out], to=onnx.TensorProto.FLOAT16, name=n.name + "_to_fp16"))
             fixed += 1
+    if len(nodes) != len(graph.node):
+        del graph.node[:]
+        graph.node.extend(nodes)
     return fixed
 
 

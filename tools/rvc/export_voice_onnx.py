@@ -8,12 +8,15 @@ I/O names match what "Export ONNX" in RVC WebUI produces:
     output  audio[1,1,T*hop]
 and embeds metadata (sample_rate, version, f0) so the app can auto-configure.
 
-    git clone https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI rvc
+    git clone https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI rvc && git -C rvc checkout 7ef1986
     pip install torch onnx onnxconverter-common
     python export_voice_onnx.py --rvc-repo rvc my_voice.pth my_voice.onnx [--fp16]
 
 The FAISS .index that often ships next to a .pth is intentionally ignored:
 MobiGPT runs with index_rate = 0 on mobile.
+
+RVC 2.3 (2026) removed the ONNX model definitions and 2.2.231006 has a broken
+Flip export, so pin commit 7ef1986: the last one with the definitions and the fix.
 """
 import argparse
 import os
@@ -23,16 +26,24 @@ import sys
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rvc-repo", required=True, help="path to a clone of RVC-Project/Retrieval-based-Voice-Conversion-WebUI")
-    ap.add_argument("--fp16", action="store_true", help="store weights in fp16 (keeps fp32 I/O); ~2x smaller")
+    ap.add_argument("--fp16", action="store_true", help="store weights in FP16 (compute and I/O stay FP32); half the size, same quality")
     ap.add_argument("--opset", type=int, default=17)
     ap.add_argument("pth")
     ap.add_argument("onnx_out")
     args = ap.parse_args()
 
     sys.path.insert(0, os.path.abspath(args.rvc_repo))
+    import inspect
+
     import onnx
     import torch
-    from infer.lib.infer_pack.models_onnx import SynthesizerTrnMsNSFsidM  # type: ignore
+
+    try:
+        from infer.lib.infer_pack.models_onnx import SynthesizerTrnMsNSFsidM  # type: ignore
+    except ImportError:
+        print("error: infer/lib/infer_pack/models_onnx.py not found. RVC 2.3+ dropped the ONNX model definitions;\n"
+              f"       run `git -C {args.rvc_repo} checkout 7ef1986` and try again.", file=sys.stderr)
+        return 2
 
     cpt = torch.load(args.pth, map_location="cpu", weights_only=False)
     version = cpt.get("version", "v1")
@@ -65,13 +76,16 @@ def main() -> int:
         dynamic_axes={"phone": [1], "pitch": [1], "pitchf": [1], "rnd": [2], "audio": [2]},
         do_constant_folding=True,
         opset_version=args.opset,
+        # RVC's graph targets the TorchScript exporter; torch >= 2.9 defaults to dynamo.
+        **({"dynamo": False} if "dynamo" in inspect.signature(torch.onnx.export).parameters else {}),
     )
 
-    model = onnx.load(args.onnx_out)
     if args.fp16:
-        from onnxconverter_common import float16
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from quantize_rvc import fp16_weights
 
-        model = float16.convert_float_to_float16(model, keep_io_types=True)
+        fp16_weights(args.onnx_out, args.onnx_out)
+    model = onnx.load(args.onnx_out)
     for k, v in {"sample_rate": str(sr), "version": version, "f0": str(if_f0), "source": "mobigpt export_voice_onnx"}.items():
         p = model.metadata_props.add()
         p.key, p.value = k, v

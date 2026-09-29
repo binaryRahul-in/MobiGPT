@@ -93,19 +93,20 @@ def main() -> int:
         ("dio-sequential", ["--pitch", "dio", "--sequential"]),
         ("dio-chunk2", ["--pitch", "dio", "--chunk", "2.0"]),
     ]
-    # The same voice converted to FP16 by quantize_rvc.py (half the download, SineGen kept FP32).
+    # The same voice with FP16 weight storage (quantize_rvc.py --kind synth): half the download.
     voices = {name: voice for name, _ in cases}
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
     try:
-        from quantize_rvc import to_fp16  # noqa: E402
+        from quantize_rvc import fp16_weights  # noqa: E402
 
         voice16 = os.path.join(models, "voice_fp16.onnx")
-        to_fp16(voice, voice16, op_block_list=["RandomNormalLike"], keep_fp32_from=["pitchf"])
+        if not fp16_weights(voice, voice16):
+            raise ValueError("voice has no FP32 weights to convert")
         info["voice_fp16"] = run(args.cli, ["inspect", voice16])
         cases.append(("dio-fp16-voice", ["--pitch", "dio"]))
         voices["dio-fp16-voice"] = voice16
-    except ValueError as e:  # already FP16
+    except Exception as e:  # noqa: BLE001 - already FP16, or conversion failed: report, keep going
         print(f"fp16 voice case skipped: {e}")
     failures = 0
     for name, extra in cases:

@@ -79,6 +79,25 @@ def cast_mask_model(path: str) -> None:
     onnx.save(onnx.shape_inference.infer_shapes(m), path)
 
 
+def generator_model(path: str) -> None:
+    """RVC SineGen-style noise: RandomUniform/RandomNormal have no FP16 CPU kernels, plus ConstantOfShape."""
+    shape = nh.from_array(np.array([1, 3, 8], np.int64), "shp")
+    nodes = [
+        h.make_node("RandomUniform", [], ["r"], dtype=T.FLOAT, shape=[1, 3, 8], name="/dec/m_source/l_sin_gen/RandomUniform"),
+        h.make_node("RandomNormal", [], ["rn"], shape=[1, 3, 8], name="rnorm"),
+        h.make_node("ConstantOfShape", ["shp"], ["c"], value=nh.from_array(np.array([0.5], np.float32)), name="fill"),
+        h.make_node("Mul", ["r", "x"], ["a"], name="m1"),
+        h.make_node("Mul", ["rn", "c"], ["b"], name="m2"),
+        h.make_node("Add", ["a", "b"], ["y0"], name="add"),
+        h.make_node("Sub", ["y0", "b"], ["y"], name="sub"),  # noise cancels: y is 0 for x = 0
+    ]
+    g = h.make_graph(nodes, "g", [h.make_tensor_value_info("x", T.FLOAT, [1, 3, 8])],
+                     [h.make_tensor_value_info("y", T.FLOAT, [1, 3, 8])], [shape])
+    m = h.make_model(g, opset_imports=[h.make_opsetid("", 17)])
+    m.ir_version = 8
+    onnx.save(onnx.shape_inference.infer_shapes(m), path)
+
+
 def main() -> int:
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -86,18 +105,30 @@ def main() -> int:
         subprocess.run([sys.executable, os.path.join(ROOT, "packages/react-native-mobigpt-voice/tools/make_test_fixtures.py"), fx],
                        check=True, stdout=subprocess.DEVNULL)
         cast_mask_model(os.path.join(fx, "cast_mask.onnx"))
+        generator_model(os.path.join(tmp, "generator.onnx"))
+        try:
+            q.to_fp16(os.path.join(tmp, "generator.onnx"), os.path.join(tmp, "generator16.onnx"))
+            y = ort.InferenceSession(os.path.join(tmp, "generator16.onnx")).run(None, {"x": np.zeros((1, 3, 8), np.float32)})[0]
+            assert np.abs(y).max() < 1e-2, f"generator output {np.abs(y).max()}"
+            print(f"ok    fp16  {'generator.onnx':32} Random*/ConstantOfShape repaired")
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"fp16 generator.onnx: {e}")
+            print(f"FAIL  fp16  generator.onnx {e}")
 
         for src in sorted(glob.glob(os.path.join(fx, "*.onnx"))):
             name = os.path.basename(src)
             cases = [("fp16", 5e-2)]
+            if name.startswith("synth_"):
+                cases.append(("fp16w", 5e-3))
             if name.startswith(("enc_", "rmvpe_", "fcpe", "cast_")):
                 cases.append(("int8", 0.2))
             for kind, tol in cases:
                 dst = os.path.join(tmp, f"{kind}_{name}")
                 try:
-                    if kind == "fp16":
-                        # voices go through the production path, which keeps phase accumulation in FP32
-                        q.quantize("synth", src, dst, None) if name.startswith("synth_") else q.to_fp16(src, dst)
+                    if kind == "fp16w":  # production voice path: FP16 weight storage, FP32 compute
+                        q.quantize("synth", src, dst, None)
+                    elif kind == "fp16":  # full FP16 compute; voices keep the pitch -> phase path in FP32
+                        q.to_fp16(src, dst, keep_fp32_from=["pitchf"] if name.startswith("synth_") else None)
                     else:
                         q.quantize("encoder", src, dst, None)
                     err = check_pair(src, dst, tol)

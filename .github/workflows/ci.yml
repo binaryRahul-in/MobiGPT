@@ -130,16 +130,23 @@ jobs:
             build/rvc-e2e/report.md
 
   model-tools:
-    name: Model tools · FP16 / INT8 conversion of every RVC layout
+    name: Model tools · FP16 / INT8 conversion + .pth export
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install numpy onnx onnxruntime==${ORT_VERSION} onnxconverter-common librosa
-      - run: python tools/rvc/test_quantize.py
+      - name: FP16 / INT8 conversion of every RVC layout
+        run: python tools/rvc/test_quantize.py
+      - name: Export a voice with the real RVC model code (FP32 and --fp16)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          git clone -q --filter=blob:none https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI build/rvc-src
+          git -C build/rvc-src checkout -q 7ef1986
+          python tools/rvc/ci_export_voice.py --rvc-repo build/rvc-src --out build/voice-export
 
   catalog:
     name: Catalog · Hugging Face files resolve
