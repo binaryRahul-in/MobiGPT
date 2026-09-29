@@ -43,6 +43,9 @@ jobs:
           ls -la "$APP"
           test -f "$APP/main.jsbundle"
           test -f "$APP/MaterialCommunityIcons.ttf"
+      - name: Show compiler errors
+        if: failure()
+        run: grep -nE "error:|fatal error|Undefined symbol|ld: " ios/xcodebuild.log | head -80 || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
