@@ -177,8 +177,8 @@ const PackList = observer(function PackList({
             <List.Item
               title={a.name}
               description={`${a.precision.toUpperCase()} · ${formatBytes(a.sizeBytes)} · ${a.license ?? ''}${
-                a.notes ? `\n${a.notes}` : ''
-              }`}
+                a.fidelity ? ` · fidelity ${(a.fidelity.cosMean * 100).toFixed(1)}% vs FP32` : ''
+              }${a.notes ? `\n${a.notes}` : ''}`}
               descriptionNumberOfLines={4}
             />
             <View style={styles.row}>

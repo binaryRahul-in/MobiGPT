@@ -1,9 +1,21 @@
 name: iOS
 
 on:
+  # macOS minutes are expensive (10x on private repos): build only when
+  # something that can affect the iOS build changes.
   push:
     branches: ['**']
-    paths-ignore: ['**.md', 'docs/**']
+    paths:
+      - 'ios/**'
+      - 'packages/*/ios/**'
+      - 'packages/*/cpp/**'
+      - 'packages/*/*.podspec'
+      - 'packages/*/package.json'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'index.js'
+      - 'src/**'
+      - '.github/workflows/ios.yml'
   pull_request:
   workflow_dispatch:
 

@@ -3,15 +3,37 @@
   "updated": "2026-09-29",
   "encoders": [
     {
+      "id": "contentvec-int8-mobigpt",
+      "name": "ContentVec 768 · INT8 (MobiGPT per-channel)",
+      "repo": "TigreGotico/voiceclonnx-rvc",
+      "file": "contentvec_768l12_q8.onnx",
+      "urls": [
+        "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/contentvec_768l12_int8_pc.onnx"
+      ],
+      "sizeBytes": 122400000,
+      "precision": "int8",
+      "channels": 768,
+      "license": "MIT",
+      "fidelity": {
+        "cosMean": 0.9864,
+        "cosP5": 0.9913
+      },
+      "notes": "Recommended. MatMul-only dynamic INT8 with per-channel weights and 7-bit range, built by MobiGPT CI: 0.986 mean cosine vs FP32 features (upstream q8: 0.887). Falls back to the upstream INT8 file if the MobiGPT release is unreachable."
+    },
+    {
       "id": "contentvec-int8",
-      "name": "ContentVec 768 · INT8",
+      "name": "ContentVec 768 · INT8 (upstream q8)",
       "repo": "TigreGotico/voiceclonnx-rvc",
       "file": "contentvec_768l12_q8.onnx",
       "sizeBytes": 95200000,
       "precision": "int8",
       "channels": 768,
       "license": "MIT",
-      "notes": "Dynamic INT8 (MatMul) quantisation: 4x smaller, ~1.6x faster on ARM CPUs. Recommended for phones with ≤ 8 GB RAM."
+      "notes": "Smallest (95 MB) but measured 0.887 mean cosine vs FP32 in MobiGPT CI; prefer the MobiGPT per-channel build.",
+      "fidelity": {
+        "cosMean": 0.8867,
+        "cosP5": 0.541
+      }
     },
     {
       "id": "contentvec-fp32",

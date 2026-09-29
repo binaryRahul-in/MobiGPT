@@ -53,8 +53,6 @@ jobs:
           - os: ubuntu-latest
             ort: onnxruntime-linux-x64
             sanitize: '1'
-          - os: macos-15
-            ort: onnxruntime-osx-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -76,6 +74,21 @@ jobs:
         with:
           name: mobigpt-rvc-cli-linux
           path: build/native/build/mobigpt-rvc
+
+  native-core-macos:
+    name: C++ engine · macos-15
+    # macOS minutes cost 10x on private repos: PRs, manual and weekly runs only
+    # (the iOS workflow already compiles the same C++ for every relevant push).
+    if: github.event_name != 'push'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy onnx librosa
+      - run: bash scripts/test-native.sh
 
   rvc-real-models:
     name: RVC · real community models (Linux)

@@ -36,6 +36,10 @@ export interface VoiceAssetPreset {
   channels?: number;
   license?: string;
   notes?: string;
+  /** Direct download URLs tried before the Hugging Face file (e.g. MobiGPT's own INT8 builds). */
+  urls?: string[];
+  /** Parity vs FP32 measured in CI (tools/rvc/quantize_rvc.py sweep). */
+  fidelity?: {cosMean: number; cosP5: number};
 }
 
 export interface VoicePreset {
@@ -220,7 +224,27 @@ export class VoiceStore {
   async installAsset(preset: VoiceAssetPreset, kind: 'encoder' | 'pitch') {
     await ensureDirs();
     this.hf.setToken(this.settings.hfToken);
-    const {path, size} = await this.fetchFromHf(preset.id, preset.repo, preset.file, preset.name, preset.sizeBytes, Paths.voiceBase);
+    let fetched: {path: string; size: number} | null = null;
+    let lastError: unknown;
+    // Preferred mirrors first (MobiGPT-built INT8), then the Hugging Face source.
+    for (const url of preset.urls ?? []) {
+      try {
+        const dest = `${Paths.voiceBase}/${safeFileName(`${preset.id}__${url.split('/').pop()}`)}`;
+        await this.downloads.start(preset.id, url, dest, preset.name, 0);
+        fetched = {path: dest, size: (await FS.stat(dest)).size};
+        break;
+      } catch (e) {
+        lastError = e;
+        this.downloads.clear(preset.id);
+      }
+    }
+    if (!fetched && preset.repo) {
+      fetched = await this.fetchFromHf(preset.id, preset.repo, preset.file, preset.name, preset.sizeBytes, Paths.voiceBase);
+    }
+    if (!fetched) {
+      throw lastError instanceof Error ? lastError : new Error('No download source available');
+    }
+    const {path, size} = fetched;
     runInAction(() => {
       this.assets = this.assets.filter(a => a.id !== preset.id);
       this.assets.push({id: preset.id, kind, name: preset.name, path, sizeBytes: size, precision: preset.precision, method: preset.method});

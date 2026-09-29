@@ -1,0 +1,54 @@
+name: Publish optimised voice models
+
+# Builds MobiGPT's INT8 ContentVec (MatMul-only, per-channel, 7-bit range) from
+# the FP32 upstream model, verifies parity on real speech and attaches it to the
+# `models-v1` release that the app's catalogue points at.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  contentvec-int8:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y espeak-ng
+      - run: pip install numpy onnx onnxruntime==1.24.3 librosa soundfile huggingface_hub
+      - name: Quantise + parity gate
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          import shutil
+          shutil.copy(hf_hub_download("TigreGotico/voiceclonnx-rvc", "contentvec_768l12.onnx"), "out/contentvec_768l12.onnx")
+          PY
+          espeak-ng -v en-us -w out/speech.wav "Private artificial intelligence runs entirely on this phone. Nothing leaves the device."
+          python - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, "tools/rvc")
+          from quantize_rvc import load_audio, parity_encoder, quantize
+          quantize("encoder", "out/contentvec_768l12.onnx", "out/contentvec_768l12_int8_pc.onnx", None, per_channel=True, reduce_range=True)
+          p = parity_encoder("out/contentvec_768l12.onnx", "out/contentvec_768l12_int8_pc.onnx", load_audio("out/speech.wav"))
+          p["mb"] = round(os.path.getsize("out/contentvec_768l12_int8_pc.onnx") / 1e6, 1)
+          json.dump(p, open("out/contentvec_768l12_int8_pc.json", "w"), indent=2)
+          print(json.dumps(p, indent=2))
+          sys.exit(0 if p["pass"] else 1)
+          PY
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models-v1
+          name: MobiGPT voice models v1
+          prerelease: true
+          body: |
+            Optimised ONNX models used by MobiGPT Voice Studio.
+            * `contentvec_768l12_int8_pc.onnx` — ContentVec 768 (layer 12) INT8, MatMul-only, per-channel, reduce_range.
+              Parity vs FP32 is in `contentvec_768l12_int8_pc.json`. Source: TigreGotico/voiceclonnx-rvc (MIT).
+          files: |
+            out/contentvec_768l12_int8_pc.onnx
+            out/contentvec_768l12_int8_pc.json

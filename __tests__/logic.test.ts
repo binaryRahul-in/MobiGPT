@@ -7,7 +7,6 @@ import {profile} from '../jest/fixtures';
 import {compareVersions, formatBytes, formatDuration} from '../src/utils/format';
 import {detectQuant, estimateModelMemory, parseLlamaModelInfo, quantQuality} from '../src/utils/gguf';
 
-
 describe('format', () => {
   it('formats bytes, durations and versions', () => {
     expect(formatBytes(0)).toBe('0 B');
@@ -80,7 +79,10 @@ describe('hugging face helpers', () => {
   });
 
   it('matches catalog files tolerantly', () => {
-    const list: HFFile[] = [{path: 'onnx/fcpe.onnx', size: 1}, {path: 'Qwen3-0.6B-Q4_K_M.gguf', size: 2}];
+    const list: HFFile[] = [
+      {path: 'onnx/fcpe.onnx', size: 1},
+      {path: 'Qwen3-0.6B-Q4_K_M.gguf', size: 2},
+    ];
     expect(matchFile(list, 'onnx/fcpe.onnx')?.size).toBe(1);
     expect(matchFile(list, 'fcpe.onnx')?.size).toBe(1);
     expect(matchFile(list, 'qwen3-0.6b-q4_k_m.gguf')?.size).toBe(2);
@@ -190,7 +192,11 @@ describe('requirements engine', () => {
   });
 
   it('recommends lighter voice settings on small phones', () => {
-    expect(recommendedVoiceSettings(profile({totalRam: 3e9}))).toMatchObject({pitchMethod: 'dio', loadStrategy: 'sequential', encoderPrecision: 'int8'});
+    expect(recommendedVoiceSettings(profile({totalRam: 3e9}))).toMatchObject({
+      pitchMethod: 'dio',
+      loadStrategy: 'sequential',
+      encoderPrecision: 'int8',
+    });
     expect(recommendedVoiceSettings(profile({totalRam: 4.5e9})).pitchMethod).toBe('fcpe');
     expect(recommendedVoiceSettings(profile({totalRam: 16e9}))).toMatchObject({pitchMethod: 'rmvpe', encoderPrecision: 'fp32'});
     const s = recommendedVoiceSettings(profile());
@@ -204,7 +210,13 @@ describe('updates', () => {
     const f = jest.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => ({tag_name: 'v1.2.0', name: 'MobiGPT 1.2.0', body: 'notes', html_url: 'u', assets: [{name: 'mobigpt.apk', browser_download_url: 'apk'}]}),
+      json: async () => ({
+        tag_name: 'v1.2.0',
+        name: 'MobiGPT 1.2.0',
+        body: 'notes',
+        html_url: 'u',
+        assets: [{name: 'mobigpt.apk', browser_download_url: 'apk'}],
+      }),
     }));
     const r = await checkForAppUpdate('1.0.0', f as any);
     expect(r.updateAvailable).toBe(true);
@@ -216,10 +228,18 @@ describe('updates', () => {
 
   it('falls back to the bundled catalog', async () => {
     const bundled = {version: 1, models: []};
-    expect((await fetchCatalog('models', bundled, (async () => {
-      throw new Error('offline');
-    }) as any)).source).toBe('bundled');
-    expect((await fetchCatalog('models', bundled, (async () => ({ok: true, json: async () => ({version: 2})})) as any)).source).toBe('bundled');
-    expect((await fetchCatalog('models', bundled, (async () => ({ok: true, json: async () => ({version: 1, models: [1]})})) as any)).source).toBe('remote');
+    expect(
+      (
+        await fetchCatalog('models', bundled, (async () => {
+          throw new Error('offline');
+        }) as any)
+      ).source,
+    ).toBe('bundled');
+    expect((await fetchCatalog('models', bundled, (async () => ({ok: true, json: async () => ({version: 2})})) as any)).source).toBe(
+      'bundled',
+    );
+    expect(
+      (await fetchCatalog('models', bundled, (async () => ({ok: true, json: async () => ({version: 1, models: [1]})})) as any)).source,
+    ).toBe('remote');
   });
 });

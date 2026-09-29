@@ -27,7 +27,16 @@ class FakeLlm implements LlmEngine {
     onProgress?.(0.5);
     onProgress?.(1);
     this.loaded = o;
-    return {description: 'qwen3 0.6B', sizeBytes: 4e8, nParams: 6e8, gpu: o.accel === 'gpu', reasonNoGPU: '', devices: [], systemInfo: '', metadata: {}};
+    return {
+      description: 'qwen3 0.6B',
+      sizeBytes: 4e8,
+      nParams: 6e8,
+      gpu: o.accel === 'gpu',
+      reasonNoGPU: '',
+      devices: [],
+      systemInfo: '',
+      metadata: {},
+    };
   }
   async unload() {
     this.loaded = null;
@@ -41,7 +50,16 @@ class FakeLlm implements LlmEngine {
     for (const tok of ['Hello', ' from', ' MobiGPT']) {
       onToken({token: tok});
     }
-    return {text: 'Hello from MobiGPT', reasoning: '', tokensPredicted: 3, tokensEvaluated: 12, promptTps: 120, genTps: 24, interrupted: false, contextFull: false};
+    return {
+      text: 'Hello from MobiGPT',
+      reasoning: '',
+      tokensPredicted: 3,
+      tokensEvaluated: 12,
+      promptTps: 120,
+      genTps: 24,
+      interrupted: false,
+      contextFull: false,
+    };
   }
   lastMessages: ChatMessage[] = [];
   lastParams?: GenerationParams;
@@ -115,7 +133,15 @@ describe('ModelStore', () => {
     const s = makeStore({totalRam: 3e9, availableRam: 1e9});
     await s.bootstrap();
     fs.__putFile('/docs/big.gguf', 2.5e9);
-    s.models.local.push({id: 'big', name: 'Big', file: 'big-Q4_K_M.gguf', sizeBytes: 2.5e9, source: 'import', localPath: '/docs/big.gguf', addedAt: 0});
+    s.models.local.push({
+      id: 'big',
+      name: 'Big',
+      file: 'big-Q4_K_M.gguf',
+      sizeBytes: 2.5e9,
+      source: 'import',
+      localPath: '/docs/big.gguf',
+      addedAt: 0,
+    });
     expect(s.models.compatibility(s.models.local[0]).severity).toBe('block');
     await expect(s.models.load('big')).rejects.toThrow(/Not enough memory/);
     await s.models.load('big', {force: true});
@@ -145,7 +171,15 @@ describe('ChatStore', () => {
     const s = makeStore();
     await s.bootstrap();
     fs.__putFile('/docs/m.gguf', 4e8);
-    s.models.local.push({id: 'm', name: 'Tiny', file: 'm-Q4_K_M.gguf', sizeBytes: 4e8, source: 'import', localPath: '/docs/m.gguf', addedAt: 0});
+    s.models.local.push({
+      id: 'm',
+      name: 'Tiny',
+      file: 'm-Q4_K_M.gguf',
+      sizeBytes: 4e8,
+      source: 'import',
+      localPath: '/docs/m.gguf',
+      addedAt: 0,
+    });
     await s.models.load('m');
     await s.chat.send('Hi there');
     const conv = s.chat.active!;
@@ -217,9 +251,29 @@ describe('VoiceStore', () => {
     expect(s.voice.buildConfig().pitchModelPath).toBeUndefined();
   });
 
+  it('prefers the MobiGPT INT8 mirror and falls back to Hugging Face when it is unreachable', async () => {
+    const s = await readyVoiceStore();
+    const mobi = voicesCatalog.encoders.find(e => e.id === 'contentvec-int8-mobigpt')!;
+    expect(mobi.urls?.length).toBeGreaterThan(0);
+    await s.voice.installAsset(mobi, 'encoder');
+    expect(s.voice.encoderAsset?.path).toContain('contentvec_768l12_int8_pc.onnx');
+
+    await s.voice.uninstallAsset(mobi.id);
+    fs.__setRemote(mobi.urls![0], 10, 404);
+    await s.voice.installAsset(mobi, 'encoder');
+    expect(s.voice.encoderAsset?.path).toContain('contentvec_768l12_q8.onnx');
+  });
+
   it('rejects ONNX files that are not RVC voices', async () => {
     const s = await readyVoiceStore();
-    inspections.set('/docs/mobigpt/voice/voices/voice.onnx', {kind: 'encoder', sizeMB: 1, quantized: false, inputs: [], outputs: [], metadata: {}});
+    inspections.set('/docs/mobigpt/voice/voices/voice.onnx', {
+      kind: 'encoder',
+      sizeMB: 1,
+      quantized: false,
+      inputs: [],
+      outputs: [],
+      metadata: {},
+    });
     await expect(s.voice.importVoice()).rejects.toThrow(/encoder model, not a voice/);
     expect(s.voice.voices).toHaveLength(0);
     inspections.clear();
