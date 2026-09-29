@@ -21,9 +21,9 @@ tags:
     timeout: 600000
 - tapOn:
     id: "load-smollm2-135m"
+# The model card swaps "Load" for "Unload" once llama.cpp has the model in memory.
 - extendedWaitUntil:
-    visible:
-      id: "loaded-banner"
+    visible: "Unload"
     timeout: 180000
 - takeScreenshot: 04-model-loaded
 - tapOn:

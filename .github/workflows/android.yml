@@ -12,20 +12,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: APK (${{ matrix.name }})
+  build-e2e:
+    name: APK (e2e x86_64)
     runs-on: ubuntu-latest
     timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: release arm64-v8a + x86_64
-            abis: arm64-v8a,x86_64
-            artifact: mobigpt-android
-          - name: e2e x86_64
-            abis: x86_64
-            artifact: mobigpt-android-e2e
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -44,12 +34,12 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: android-${{ matrix.artifact }}
+          key: android-mobigpt-android-e2e
           max-size: 2G
       - run: yarn install --frozen-lockfile
       - name: Assemble release APK
         working-directory: android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=${{ matrix.abis }} --stacktrace
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --stacktrace
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -57,7 +47,7 @@ jobs:
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           unzip -l "$APK" | grep "lib/" | awk '{print $1, $4}'
-          for abi in $(echo "${{ matrix.abis }}" | tr ',' ' '); do
+          for abi in $(echo "x86_64" | tr ',' ' '); do
             for lib in libmobigpt_voice.so libonnxruntime.so libreactnative.so; do
               unzip -l "$APK" | grep -q "lib/$abi/$lib" || { echo "::error::$lib missing for $abi"; exit 1; }
             done
@@ -66,12 +56,59 @@ jobs:
           ls -la "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: mobigpt-android-e2e
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+  build-release:
+    name: APK (release arm64-v8a + x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-mobigpt-android
+          max-size: 2G
+      - run: yarn install --frozen-lockfile
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --stacktrace
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      - name: Verify native libraries are packaged
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          unzip -l "$APK" | grep "lib/" | awk '{print $1, $4}'
+          for abi in $(echo "arm64-v8a,x86_64" | tr ',' ' '); do
+            for lib in libmobigpt_voice.so libonnxruntime.so libreactnative.so; do
+              unzip -l "$APK" | grep -q "lib/$abi/$lib" || { echo "::error::$lib missing for $abi"; exit 1; }
+            done
+            unzip -l "$APK" | grep -q "lib/$abi/librnllama" || { echo "::error::llama.rn missing for $abi"; exit 1; }
+          done
+          ls -la "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobigpt-android
           path: android/app/build/outputs/apk/release/app-release.apk
 
   e2e:
     name: E2E · Maestro on Android emulator
-    needs: build
+    needs: build-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -95,6 +132,7 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
+          cores: 4
           ram-size: 4096M
           disk-size: 6000M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

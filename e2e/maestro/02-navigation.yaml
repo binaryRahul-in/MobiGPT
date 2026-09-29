@@ -16,9 +16,10 @@ name: 02-navigation
 - takeScreenshot: 02-device
 - tapOn:
     id: "tab-models"
-- extendedWaitUntil:
-    visible: "Qwen3 0.6B"
-    timeout: 20000
+- scrollUntilVisible:
+    element: "Qwen3 0.6B"
+    direction: DOWN
+    timeout: 30000
 - takeScreenshot: 02-models
 - tapOn:
     id: "open-settings"
