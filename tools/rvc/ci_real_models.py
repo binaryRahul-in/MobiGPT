@@ -93,12 +93,26 @@ def main() -> int:
         ("dio-sequential", ["--pitch", "dio", "--sequential"]),
         ("dio-chunk2", ["--pitch", "dio", "--chunk", "2.0"]),
     ]
+    # The same voice converted to FP16 by quantize_rvc.py (half the download, SineGen kept FP32).
+    voices = {name: voice for name, _ in cases}
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, here)
+    try:
+        from quantize_rvc import to_fp16  # noqa: E402
+
+        voice16 = os.path.join(models, "voice_fp16.onnx")
+        to_fp16(voice, voice16, op_block_list=["RandomNormalLike"], keep_fp32_from=["pitchf"])
+        info["voice_fp16"] = run(args.cli, ["inspect", voice16])
+        cases.append(("dio-fp16-voice", ["--pitch", "dio"]))
+        voices["dio-fp16-voice"] = voice16
+    except ValueError as e:  # already FP16
+        print(f"fp16 voice case skipped: {e}")
     failures = 0
     for name, extra in cases:
         out = os.path.join(args.out, f"out-{name}.wav")
         row = {"case": name}
         try:
-            stats = run(args.cli, ["convert", "--encoder", enc_q8, "--voice", voice, *extra, speech, out])
+            stats = run(args.cli, ["convert", "--encoder", enc_q8, "--voice", voices[name], *extra, speech, out])
             y, osr = sf.read(out)
             row.update(stats)
             row["rms"] = float(np.sqrt(np.mean(y ** 2)))
@@ -118,8 +132,6 @@ def main() -> int:
     int8 = {}
     try:
         enc_fp32 = hf_file(BASE_REPO, "contentvec_768l12.onnx", models)
-        here = os.path.dirname(os.path.abspath(__file__))
-        sys.path.insert(0, here)
         from quantize_rvc import load_audio, parity_encoder, sweep_encoder  # noqa: E402
 
         audio = load_audio(speech)
@@ -136,6 +148,8 @@ def main() -> int:
               open(os.path.join(args.out, "results.json"), "w"), indent=2, default=str)
 
     lines = ["## RVC engine × real models", "", f"Input: espeak-ng speech, {in_dur:.2f} s, median F0 {in_f0:.0f} Hz", "",
+             *([f"Voice: {os.path.getsize(voice) / 1e6:.0f} MB, FP16 conversion {os.path.getsize(voices['dio-fp16-voice']) / 1e6:.0f} MB", ""]
+               if "dio-fp16-voice" in voices else []),
              "| case | pass | RTF | encoder ms | pitch ms | synth ms | chunks | out F0 ratio | RMS | note |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
