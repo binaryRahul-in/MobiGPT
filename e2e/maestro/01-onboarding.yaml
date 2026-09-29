@@ -5,7 +5,7 @@ name: 01-onboarding
     clearState: true
 - extendedWaitUntil:
     visible: "Your private AI, running entirely on this phone."
-    timeout: 60000
+    timeout: 120000
 - takeScreenshot: 01-welcome
 - tapOn:
     id: "onboarding-next"

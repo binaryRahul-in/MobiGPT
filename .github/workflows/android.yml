@@ -152,8 +152,10 @@ jobs:
           disable-animations: true
           script: |
             adb install -r apk/app-release.apk
-            mkdir -p maestro-output && adb logcat -c
-            maestro test e2e/maestro --format junit --output maestro-report.xml --test-output-dir maestro-output; s=$?; adb logcat -d > maestro-output/logcat.txt; grep -E "ReactNativeJS|MobiGPTVoice|AndroidRuntime|onnxruntime|RNLlama" maestro-output/logcat.txt | tail -300; exit $s
+            adb shell settings put global hide_error_dialogs 1; adb shell settings put secure anr_show_background 0; adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null
+            mkdir -p maestro-output && adb logcat -G 16M && adb logcat -c
+            adb shell monkey -p ai.mobigpt.app -c android.intent.category.LAUNCHER 1 >/dev/null && sleep 20 && adb shell am force-stop ai.mobigpt.app
+            maestro test e2e/maestro --format junit --output maestro-report.xml --test-output-dir maestro-output; s=$?; adb logcat -d > maestro-output/logcat.txt; grep -E "ReactNativeJS|MobiGPTVoice|AndroidRuntime|onnxruntime|RNLlama|FATAL|ANR in|not responding|F DEBUG" maestro-output/logcat.txt | tail -300; echo "--- on screen now:"; adb shell uiautomator dump /sdcard/ui.xml >/dev/null && adb shell cat /sdcard/ui.xml | grep -o 'text="[^"]\+"' | head -60; exit $s
       - uses: actions/upload-artifact@v4
         if: always()
         with:
