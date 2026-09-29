@@ -1,0 +1,26 @@
+export const HardwareInfo = {
+  getCPUInfo: jest.fn(async () => ({
+    cores: 8,
+    features: ['fp', 'asimd', 'asimddp', 'i8mm', 'fphp'],
+    hasFp16: true,
+    hasDotProd: true,
+    hasSve: false,
+    hasI8mm: true,
+    socModel: 'SM8650',
+    hardware: 'qcom',
+    maxFreqMhz: 3300,
+    abis: ['arm64-v8a'],
+  })),
+  getGPUInfo: jest.fn(async () => ({
+    renderer: 'Adreno (TM) 750',
+    vendor: 'Qualcomm',
+    version: 'OpenGL ES 3.2',
+    hasAdreno: true,
+    hasMali: false,
+    hasPowerVR: false,
+    hasAppleGpu: false,
+    gpuType: 'Adreno (Qualcomm)',
+  })),
+  getAvailableMemory: jest.fn(async () => 5e9),
+  hasNpu: jest.fn(async () => true),
+};

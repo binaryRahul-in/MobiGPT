@@ -1,0 +1,39 @@
+appId: ai.mobigpt.app
+name: 04-llm-chat
+tags:
+  - network
+---
+# Downloads SmolLM2-135M (≈145 MB) from Hugging Face, loads it with llama.cpp
+# on the emulator CPU and chats with it.
+- launchApp
+- tapOn:
+    id: "tab-models"
+- tapOn: "All"
+- scrollUntilVisible:
+    element:
+      id: "download-smollm2-135m"
+    direction: DOWN
+- tapOn:
+    id: "download-smollm2-135m"
+- extendedWaitUntil:
+    visible:
+      id: "load-smollm2-135m"
+    timeout: 600000
+- tapOn:
+    id: "load-smollm2-135m"
+- extendedWaitUntil:
+    visible:
+      id: "loaded-banner"
+    timeout: 180000
+- takeScreenshot: 04-model-loaded
+- tapOn:
+    id: "tab-chat"
+- tapOn:
+    id: "chat-input"
+- inputText: "Say hello in five words."
+- tapOn:
+    id: "chat-send"
+- extendedWaitUntil:
+    visible: ".*tok/s.*"
+    timeout: 180000
+- takeScreenshot: 04-chat-reply

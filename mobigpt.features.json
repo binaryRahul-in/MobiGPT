@@ -1,0 +1,13 @@
+{
+  "$comment": "Build-time feature switches. Runtime installs (models, voice packs) are managed in-app under Settings > Features. Run `yarn features` to print the effective configuration.",
+  "llm": {
+    "enabled": true,
+    "gpu": { "android": "opencl", "ios": "metal" },
+    "npu": { "android": "hexagon" }
+  },
+  "voice": {
+    "enabled": true,
+    "ortVersion": "1.24.3",
+    "ortFlavor": "standard"
+  }
+}

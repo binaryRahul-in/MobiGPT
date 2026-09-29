@@ -1,0 +1,27 @@
+import {DeviceProfile} from '../src/features/device';
+
+export const profile = (over: Partial<DeviceProfile> = {}): DeviceProfile => ({
+  platform: 'android',
+  osVersion: '15',
+  apiLevel: 35,
+  model: 'Pixel',
+  brand: 'google',
+  isEmulator: false,
+  totalRam: 8e9,
+  availableRam: 4e9,
+  freeStorage: 50e9,
+  cores: 8,
+  maxFreqMhz: 3000,
+  cpuFeatures: ['asimddp', 'i8mm'],
+  hasFp16: true,
+  hasDotProd: true,
+  hasI8mm: true,
+  soc: 'SM8650',
+  gpu: {name: 'Adreno 750', type: 'Adreno (Qualcomm)', adreno: true, mali: false, apple: false},
+  hasNpu: true,
+  abis: ['arm64-v8a'],
+  llamaDevices: ['CPU'],
+  voiceModuleAvailable: true,
+  ortProviders: ['CPUExecutionProvider'],
+  ...over,
+});

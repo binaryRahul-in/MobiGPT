@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1' # weekly: re-validate the model catalog + real-model voice run
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ORT_VERSION: 1.24.3
+
+jobs:
+  js:
+    name: JS · typecheck, lint, unit + UI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+        env:
+          RNLLAMA_SKIP_POSTINSTALL: '1'
+      - run: yarn typecheck
+      - run: yarn lint --max-warnings 0
+      - run: npx prettier --check "src/**/*.{ts,tsx}" "packages/*/src/**/*.ts" "*.js"
+      - run: yarn test:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/lcov.info
+          if-no-files-found: ignore
+
+  native-core:
+    name: C++ engine · ${{ matrix.os }}${{ matrix.sanitize && ' (ASan+UBSan)' || '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            ort: onnxruntime-linux-x64
+          - os: ubuntu-latest
+            ort: onnxruntime-linux-x64
+            sanitize: '1'
+          - os: macos-15
+            ort: onnxruntime-osx-universal2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy onnx librosa
+      - name: Download ONNX Runtime ${{ env.ORT_VERSION }}
+        run: |
+          mkdir -p build/native
+          curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${{ matrix.ort }}-${ORT_VERSION}.tgz" | tar xz -C build/native
+          echo "ORT_ROOT=$PWD/build/native/${{ matrix.ort }}-${ORT_VERSION}" >> "$GITHUB_ENV"
+      - name: Build + run tests
+        run: bash scripts/test-native.sh
+        env:
+          SANITIZE: ${{ matrix.sanitize }}
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && !matrix.sanitize
+        with:
+          name: mobigpt-rvc-cli-linux
+          path: build/native/build/mobigpt-rvc
+
+  rvc-real-models:
+    name: RVC · real community models (Linux)
+    needs: native-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Depends on third-party Hugging Face repos staying online; a failure here
+    # is reported in the job summary but does not block the pipeline.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y espeak-ng
+      - run: pip install numpy onnx onnxruntime==${ORT_VERSION} librosa soundfile huggingface_hub
+      - name: Build engine CLI
+        run: |
+          mkdir -p build/native
+          curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" | tar xz -C build/native
+          ORT_ROOT=$PWD/build/native/onnxruntime-linux-x64-${ORT_VERSION}
+          echo "LD_LIBRARY_PATH=$ORT_ROOT/lib" >> "$GITHUB_ENV"
+          cmake -S packages/react-native-mobigpt-voice -B build/rvc -DORT_ROOT=$ORT_ROOT -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/rvc -j4 --target mobigpt-rvc
+      - name: Convert speech with real RVC models
+        run: python tools/rvc/ci_real_models.py --cli build/rvc/mobigpt-rvc --out build/rvc-e2e
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - if: always()
+        run: cat build/rvc-e2e/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rvc-real-models
+          path: |
+            build/rvc-e2e/*.wav
+            build/rvc-e2e/*.json
+            build/rvc-e2e/report.md
+
+  catalog:
+    name: Catalog · Hugging Face files resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/validate-catalog.js
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}

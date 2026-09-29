@@ -1,0 +1,128 @@
+// MobiGPT Voice — Android library build.
+// Builds cpp/ (RVC engine + JSI) against the ONNX Runtime Android AAR.
+// AGP / Kotlin plugins come from the host app's root buildscript.
+def isNewArchitectureEnabled() {
+  return rootProject.hasProperty("newArchEnabled") && rootProject.getProperty("newArchEnabled") == "true"
+}
+
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+if (isNewArchitectureEnabled()) {
+  apply plugin: "com.facebook.react"
+}
+
+def getExtOrDefault(name, fallback) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.findProperty("MobiGPTVoice_" + name) ?: fallback)
+}
+
+// "standard" = CPU + XNNPACK + NNAPI (all devices); "qnn" swaps in the
+// Qualcomm QNN build for Hexagon NPU acceleration (larger APK).
+def ortVersion = getExtOrDefault("ortVersion", "1.24.3")
+def ortFlavor = getExtOrDefault("ortFlavor", "standard")
+def ortArtifact = ortFlavor == "qnn" ? "onnxruntime-android-qnn" : "onnxruntime-android"
+
+def reactNativeArchitectures() {
+  def value = project.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["arm64-v8a", "x86_64"]
+}
+
+def resolveBuildType() {
+  def tasks = gradle.startParameter.taskNames.toString().toLowerCase()
+  return tasks.contains("release") ? "release" : "debug"
+}
+
+android {
+  namespace "ai.mobigpt.voice"
+  ndkVersion getExtOrDefault("ndkVersion", "27.1.12297006")
+  compileSdkVersion getExtOrDefault("compileSdkVersion", 36)
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion", 24)
+    targetSdkVersion getExtOrDefault("targetSdkVersion", 36)
+    buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
+    buildConfigField "String", "ORT_FLAVOR", "\"${ortFlavor}\""
+    externalNativeBuild {
+      cmake {
+        cppFlags "-O3 -fexceptions -frtti -std=c++20"
+        arguments "-DANDROID_STL=c++_shared",
+          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+          "-DORT_EXTRACT_DIR=${buildDir}/ort"
+        abiFilters(*reactNativeArchitectures())
+      }
+    }
+  }
+
+  buildFeatures {
+    prefab true
+    buildConfig true
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = "17"
+  }
+
+  packagingOptions {
+    doNotStrip resolveBuildType() == "debug" ? "**/**/*.so" : ""
+    excludes = [
+      "META-INF",
+      "META-INF/**",
+      "**/libc++_shared.so",
+      "**/libfbjni.so",
+      "**/libjsi.so",
+      "**/libreactnative.so",
+      "**/libonnxruntime.so",
+    ]
+  }
+
+  lintOptions {
+    disable "GradleCompatible"
+  }
+
+  configurations {
+    extractOrt
+  }
+}
+
+repositories {
+  mavenCentral()
+  google()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  // Ships libonnxruntime.so in the APK; the same AAR is unpacked below so
+  // CMake can compile against its headers and link its .so.
+  implementation "com.microsoft.onnxruntime:${ortArtifact}:${ortVersion}"
+  extractOrt "com.microsoft.onnxruntime:${ortArtifact}:${ortVersion}@aar"
+}
+
+def extractOrtTask = tasks.register("extractOrt") {
+  inputs.files(configurations.extractOrt)
+  outputs.dir("${buildDir}/ort")
+  doLast {
+    configurations.extractOrt.files.each { aar ->
+      copy {
+        from zipTree(aar)
+        into "${buildDir}/ort"
+        include "headers/**", "jni/**"
+      }
+    }
+  }
+}
+
+afterEvaluate {
+  tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") || it.name.contains("ExternalNativeBuild") }.configureEach {
+    dependsOn(extractOrtTask)
+  }
+}

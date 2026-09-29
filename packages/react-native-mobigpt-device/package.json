@@ -1,0 +1,26 @@
+{
+  "name": "react-native-mobigpt-device",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hardware introspection for MobiGPT: CPU features, GPU vendor, NPU presence and live memory.",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "MobiGPTDeviceSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "ai.mobigpt.device"
+    },
+    "ios": {
+      "modulesProvider": {
+        "HardwareInfo": "MobiGPTDevice"
+      }
+    }
+  }
+}

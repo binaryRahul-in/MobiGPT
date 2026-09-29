@@ -1,0 +1,29 @@
+appId: ai.mobigpt.app
+name: 01-onboarding
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Your private AI, running entirely on this phone."
+    timeout: 60000
+- takeScreenshot: 01-welcome
+- tapOn:
+    id: "onboarding-next"
+- assertVisible: "Offline by design"
+- tapOn:
+    id: "onboarding-next"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-device"
+    timeout: 20000
+- takeScreenshot: 01-device-scan
+- tapOn:
+    id: "onboarding-next"
+- assertVisible: "Pick your features"
+- assertVisible: "Voice Studio (RVC)"
+- takeScreenshot: 01-features
+- tapOn:
+    id: "onboarding-finish"
+- extendedWaitUntil:
+    visible: "Load a model to start"
+    timeout: 20000

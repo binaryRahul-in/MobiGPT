@@ -1,0 +1,73 @@
+{
+  "name": "mobigpt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MobiGPT \u2014 private, on-device AI: local LLM chat (llama.cpp) and RVC voice conversion (ONNX Runtime).",
+  "license": "MIT",
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:ci": "jest --ci --coverage",
+    "test:native": "bash scripts/test-native.sh",
+    "features": "node scripts/features.js",
+    "build:android": "cd android && ./gradlew assembleRelease",
+    "build:android:debug": "cd android && ./gradlew assembleDebug",
+    "format": "prettier --write \"**/*.{js,ts,tsx,json,md}\""
+  },
+  "dependencies": {
+    "@dr.pogodin/react-native-fs": "2.36.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/slider": "5.0.1",
+    "@react-native-documents/picker": "10.1.7",
+    "@react-navigation/bottom-tabs": "7.8.12",
+    "@react-navigation/native": "7.1.26",
+    "@react-navigation/native-stack": "7.8.6",
+    "llama.rn": "0.13.0-rc.5",
+    "mobx": "6.15.0",
+    "mobx-persist-store": "1.1.8",
+    "mobx-react-lite": "4.1.0",
+    "react": "19.1.1",
+    "react-native": "0.82.1",
+    "react-native-device-info": "14.1.1",
+    "react-native-mobigpt-device": "link:./packages/react-native-mobigpt-device",
+    "react-native-mobigpt-voice": "link:./packages/react-native-mobigpt-voice",
+    "react-native-paper": "5.14.5",
+    "react-native-safe-area-context": "5.6.1",
+    "react-native-screens": "4.19.0",
+    "react-native-svg": "15.14.0",
+    "react-native-vector-icons": "10.3.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.0.0",
+    "@react-native-community/cli-platform-android": "20.0.0",
+    "@react-native-community/cli-platform-ios": "20.0.0",
+    "@react-native/babel-preset": "0.82.1",
+    "@react-native/eslint-config": "0.82.1",
+    "@react-native/metro-config": "0.82.1",
+    "@react-native/typescript-config": "0.82.1",
+    "@testing-library/react-native": "13.3.3",
+    "@types/jest": "^29.5.13",
+    "@types/react": "^19.1.1",
+    "@types/react-native-vector-icons": "^6.4.18",
+    "@types/react-test-renderer": "^19.1.0",
+    "eslint": "^8.19.0",
+    "jest": "^29.6.3",
+    "prettier": "2.8.8",
+    "react-test-renderer": "19.1.1",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@1.22.22",
+  "resolutions": {
+    "@react-navigation/elements": "2.9.3"
+  }
+}

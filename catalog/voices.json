@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "updated": "2026-09-29",
+  "encoders": [
+    {
+      "id": "contentvec-int8",
+      "name": "ContentVec 768 · INT8",
+      "repo": "TigreGotico/voiceclonnx-rvc",
+      "file": "contentvec_768l12_q8.onnx",
+      "sizeBytes": 95200000,
+      "precision": "int8",
+      "channels": 768,
+      "license": "MIT",
+      "notes": "Dynamic INT8 (MatMul) quantisation: 4x smaller, ~1.6x faster on ARM CPUs. Recommended for phones with ≤ 8 GB RAM."
+    },
+    {
+      "id": "contentvec-fp32",
+      "name": "ContentVec 768 · FP32",
+      "repo": "TigreGotico/voiceclonnx-rvc",
+      "file": "contentvec_768l12.onnx",
+      "sizeBytes": 377800000,
+      "precision": "fp32",
+      "channels": 768,
+      "license": "MIT",
+      "notes": "Reference precision. Best intelligibility; needs ~0.6 GB RAM while loaded."
+    },
+    {
+      "id": "hubert-webui-fp32",
+      "name": "HuBERT vec-768-layer-12 (RVC WebUI export)",
+      "repo": "NaruseMioShirakana/MoeSS-SUBModel",
+      "file": "vec-768-layer-12.onnx",
+      "sizeBytes": 378000000,
+      "precision": "fp32",
+      "channels": 768,
+      "license": "MIT",
+      "notes": "The encoder exported by RVC WebUI's ONNX tab (input `source`)."
+    }
+  ],
+  "pitch": [
+    {
+      "id": "rmvpe-int8",
+      "method": "rmvpe",
+      "name": "RMVPE · INT8",
+      "repo": "TigreGotico/voiceclonnx-rvc",
+      "file": "rmvpe_q8.onnx",
+      "sizeBytes": 98700000,
+      "precision": "int8",
+      "license": "MIT"
+    },
+    {
+      "id": "rmvpe-fp32",
+      "method": "rmvpe",
+      "name": "RMVPE · FP32",
+      "repo": "TigreGotico/voiceclonnx-rvc",
+      "file": "rmvpe.onnx",
+      "sizeBytes": 361700000,
+      "precision": "fp32",
+      "license": "MIT"
+    },
+    {
+      "id": "fcpe",
+      "method": "fcpe",
+      "name": "FCPE (fast context pitch estimator)",
+      "repo": "niobures/FCPE",
+      "file": "onnx/fcpe.onnx",
+      "sizeBytes": 42000000,
+      "precision": "fp32",
+      "license": "MIT"
+    }
+  ],
+  "voices": [
+    {
+      "id": "ozada-woman-1",
+      "name": "Woman 1",
+      "description": "Community demo voice used by the voiceclonnx benchmarks.",
+      "repo": "ozada/onnx_rvc",
+      "file": "woman_1.onnx",
+      "sampleRate": 40000,
+      "version": "v2",
+      "license": "See model card"
+    }
+  ],
+  "search": {
+    "query": "rvc onnx",
+    "hint": "Any RVC v1/v2 synthesiser exported to ONNX (RVC WebUI \"Export ONNX\" tab or w-okada voice-changer) works. Convert .pth voices with tools/rvc/export_voice_onnx.py."
+  }
+}

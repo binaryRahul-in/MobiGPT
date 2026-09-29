@@ -1,0 +1,36 @@
+appId: ai.mobigpt.app
+name: 02-navigation
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-device"
+    timeout: 30000
+- tapOn:
+    id: "tab-device"
+- extendedWaitUntil:
+    visible:
+      id: "device-ram"
+    timeout: 20000
+- assertVisible: "Accelerators"
+- takeScreenshot: 02-device
+- tapOn:
+    id: "tab-models"
+- extendedWaitUntil:
+    visible: "Qwen3 0.6B"
+    timeout: 20000
+- takeScreenshot: 02-models
+- tapOn:
+    id: "open-settings"
+- assertVisible: "Inference hardware"
+- scrollUntilVisible:
+    element:
+      id: "open-about"
+    direction: DOWN
+- tapOn:
+    id: "open-about"
+- assertVisible:
+    id: "about-version"
+- takeScreenshot: 02-about
+- back
+- back

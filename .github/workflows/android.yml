@@ -1,0 +1,112 @@
+name: Android
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: APK (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release arm64-v8a + x86_64
+            abis: arm64-v8a,x86_64
+            artifact: mobigpt-android
+          - name: e2e x86_64
+            abis: x86_64
+            artifact: mobigpt-android-e2e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-${{ matrix.artifact }}
+          max-size: 2G
+      - run: yarn install --frozen-lockfile
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=${{ matrix.abis }} --stacktrace
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      - name: Verify native libraries are packaged
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          unzip -l "$APK" | grep "lib/" | awk '{print $1, $4}'
+          for abi in $(echo "${{ matrix.abis }}" | tr ',' ' '); do
+            for lib in libmobigpt_voice.so libonnxruntime.so libreactnative.so; do
+              unzip -l "$APK" | grep -q "lib/$abi/$lib" || { echo "::error::$lib missing for $abi"; exit 1; }
+            done
+            unzip -l "$APK" | grep -q "lib/$abi/librnllama" || { echo "::error::llama.rn missing for $abi"; exit 1; }
+          done
+          ls -la "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+  e2e:
+    name: E2E · Maestro on Android emulator
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobigpt-android-e2e
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Run flows on emulator (API 34, x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb install -r apk/app-release.apk
+            maestro test e2e/maestro --format junit --output maestro-report.xml --test-output-dir maestro-output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: maestro-results
+          path: |
+            maestro-report.xml
+            maestro-output
+            ~/.maestro/tests

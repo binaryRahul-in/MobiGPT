@@ -1,0 +1,36 @@
+{
+  "name": "react-native-mobigpt-voice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-device RVC voice conversion for React Native: ONNX Runtime C++ pipeline (HuBERT/ContentVec + RMVPE/FCPE/WORLD + net_g) with JSI bindings and native audio I/O.",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "types": "src/index.ts",
+  "files": [
+    "src",
+    "cpp",
+    "android",
+    "ios",
+    "cmake",
+    "*.podspec",
+    "!**/build"
+  ],
+  "peerDependencies": {
+    "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "MobiGPTVoiceSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "ai.mobigpt.voice"
+    },
+    "ios": {
+      "modulesProvider": {
+        "MobiGPTVoice": "MobiGPTVoice"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# Maestro suite for MobiGPT. Runs on the Android emulator in CI
+# (.github/workflows/android.yml) and locally with `maestro test e2e/maestro`.
+flows:
+  - "01-*"
+  - "02-*"
+  - "03-*"
+  - "04-*"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - 01-onboarding
+    - 02-navigation
+    - 03-features-voice
+    - 04-llm-chat

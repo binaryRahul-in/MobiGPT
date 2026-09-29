@@ -1,0 +1,39 @@
+appId: ai.mobigpt.app
+name: 03-features-voice
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-voice"
+    timeout: 30000
+- tapOn:
+    id: "tab-voice"
+- runFlow:
+    when:
+      visible:
+        id: "voice-enable"
+    commands:
+      - tapOn:
+          id: "voice-enable"
+      - tapOn:
+          id: "feature-toggle-voice"
+      - runFlow:
+          when:
+            visible:
+              id: "feature-confirm"
+          commands:
+            - tapOn:
+                id: "feature-confirm"
+- extendedWaitUntil:
+    visible:
+      id: "voice-screen"
+    timeout: 20000
+- assertVisible: "Almost ready"
+- takeScreenshot: 03-voice-studio
+- tapOn:
+    id: "voice-library"
+- assertVisible: "Your voices"
+- tapOn: "Engine"
+- assertVisible: "Content encoders"
+- takeScreenshot: 03-voice-packs
+- back
