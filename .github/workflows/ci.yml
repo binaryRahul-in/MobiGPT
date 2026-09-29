@@ -91,7 +91,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y espeak-ng
-      - run: pip install numpy onnx onnxruntime==${ORT_VERSION} librosa soundfile huggingface_hub
+      - run: pip install numpy onnx onnxruntime==${ORT_VERSION} onnxconverter-common librosa soundfile huggingface_hub
       - name: Build engine CLI
         run: |
           set -o pipefail

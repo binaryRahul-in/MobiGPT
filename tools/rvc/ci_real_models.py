@@ -114,21 +114,21 @@ def main() -> int:
         failures += 0 if row["pass"] else 1
         results.append(row)
 
-    # INT8 analysis on the real encoder.
+    # INT8 analysis on the real encoder: every strategy vs FP32 on the same speech.
     int8 = {}
     try:
         enc_fp32 = hf_file(BASE_REPO, "contentvec_768l12.onnx", models)
         here = os.path.dirname(os.path.abspath(__file__))
-        ours = os.path.join(models, "contentvec_selective_q8.onnx")
-        rep = os.path.join(args.out, "int8-selective.json")
-        subprocess.run([sys.executable, os.path.join(here, "quantize_rvc.py"), "quantize", "--kind", "encoder", "--audio", speech,
-                        "--report", rep, enc_fp32, ours], check=False)
-        int8["selective"] = json.load(open(rep))
         sys.path.insert(0, here)
-        from quantize_rvc import load_audio, parity_encoder  # noqa: E402
+        from quantize_rvc import load_audio, parity_encoder, sweep_encoder  # noqa: E402
 
-        int8["upstream_q8"] = parity_encoder(enc_fp32, enc_q8, load_audio(speech))
-        int8["upstream_q8"]["dst_mb"] = round(os.path.getsize(enc_q8) / 1e6, 1)
+        audio = load_audio(speech)
+        int8["sweep"] = sweep_encoder(enc_fp32, os.path.join(args.out, "sweep"), audio)
+        up = parity_encoder(enc_fp32, enc_q8, audio)
+        int8["upstream_q8"] = {"variant": "upstream voiceclonnx q8", "mb": round(os.path.getsize(enc_q8) / 1e6, 1),
+                               "cos_mean": round(up["cosine_mean"], 4), "cos_p5": round(up["cosine_p5"], 4), "pass": up["pass"]}
+        for r in int8["sweep"]:
+            r.pop("file", None)
     except Exception as e:  # noqa: BLE001
         int8["error"] = str(e)
 
@@ -136,16 +136,21 @@ def main() -> int:
               open(os.path.join(args.out, "results.json"), "w"), indent=2, default=str)
 
     lines = ["## RVC engine × real models", "", f"Input: espeak-ng speech, {in_dur:.2f} s, median F0 {in_f0:.0f} Hz", "",
-             "| case | pass | RTF | chunks | out F0 ratio | RMS | note |", "|---|---|---|---|---|---|---|"]
+             "| case | pass | RTF | encoder ms | pitch ms | synth ms | chunks | out F0 ratio | RMS | note |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
-        lines.append(f"| {r['case']} | {'✅' if r['pass'] else '❌'} | {r.get('rtf', 0):.3f} | {r.get('chunks', '')} | "
+        lines.append(f"| {r['case']} | {'✅' if r['pass'] else '❌'} | {r.get('rtf', 0):.3f} | {r.get('encoderMs', 0):.0f} | "
+                     f"{r.get('pitchMs', 0):.0f} | {r.get('synthMs', 0):.0f} | {r.get('chunks', '')} | "
                      f"{r.get('f0_ratio', 0):.2f} | {r.get('rms', 0):.3f} | {r.get('error', '')[:80]} |")
-    if "selective" in int8:
-        s, u = int8["selective"], int8.get("upstream_q8", {})
-        lines += ["", "### ContentVec INT8 analysis (cosine similarity vs FP32 features)", "",
-                  "| variant | size MB | mean cos | p5 cos |", "|---|---|---|---|",
-                  f"| selective (MatMul-only, per-channel) | {s['dst_mb']} | {s['parity']['cosine_mean']:.4f} | {s['parity']['cosine_p5']:.4f} |",
-                  f"| upstream q8 | {u.get('dst_mb', '?')} | {u.get('cosine_mean', 0):.4f} | {u.get('cosine_p5', 0):.4f} |"]
+    if "sweep" in int8:
+        lines += ["", "### ContentVec quantisation sweep (vs FP32 features on the same speech)", "",
+                  "| variant | size MB | mean cos | p5 cos | ms | pass |", "|---|---|---|---|---|---|"]
+        for r in [*int8["sweep"], int8.get("upstream_q8", {})]:
+            if r:
+                lines.append(f"| {r['variant']} | {r.get('mb', '')} | {r.get('cos_mean', 0)} | {r.get('cos_p5', '')} | "
+                             f"{r.get('ms', '')} | {'✅' if r.get('pass') else '❌'} {r.get('error', '')} |")
+    elif "error" in int8:
+        lines += ["", f"INT8 analysis failed: {int8['error']}"]
     report = "\n".join(lines) + "\n"
     open(os.path.join(args.out, "report.md"), "w").write(report)
     print(report)

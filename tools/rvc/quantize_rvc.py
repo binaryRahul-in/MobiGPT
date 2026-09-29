@@ -198,7 +198,14 @@ def parity_synth(a: str, b: str, frames: int = 200) -> dict:
 
 # ---------------------------------------------------------------- quantise
 
-def quantize(kind: str, src: str, dst: str, ops: list[str] | None) -> None:
+def quantize(kind: str, src: str, dst: str, ops: list[str] | None, per_channel: bool = True, reduce_range: bool = True,
+             exclude: list[str] | None = None) -> None:
+    """Dynamic INT8 (or FP16 for kind == synth).
+
+    reduce_range=True (7-bit weights) avoids the U8S8 accumulator saturation of
+    AVX2/AVX-512 CPUs without VNNI; ARM (phones) is unaffected either way, but
+    parity must be measured without the artefact.
+    """
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     if kind == "synth":
@@ -209,8 +216,50 @@ def quantize(kind: str, src: str, dst: str, ops: list[str] | None) -> None:
         onnx.save(m16, dst)
         return
     default_ops = {"encoder": ["MatMul", "Gemm"], "rmvpe": ["MatMul", "Gemm"], "fcpe": ["MatMul", "Gemm"]}[kind]
-    quantize_dynamic(src, dst, weight_type=QuantType.QInt8, per_channel=True, reduce_range=False,
-                     op_types_to_quantize=ops or default_ops)
+    nodes_to_exclude = []
+    if exclude:
+        m = onnx.load(src, load_external_data=False)
+        nodes_to_exclude = [n.name for n in m.graph.node if any(e in n.name for e in exclude)]
+    quantize_dynamic(src, dst, weight_type=QuantType.QInt8, per_channel=per_channel, reduce_range=reduce_range,
+                     op_types_to_quantize=ops or default_ops, nodes_to_exclude=nodes_to_exclude)
+
+
+ENCODER_VARIANTS = [
+    # name, kwargs for quantize(); "fp16" is handled separately
+    ("int8 MatMul per-tensor", dict(per_channel=False, reduce_range=True)),
+    ("int8 MatMul per-channel", dict(per_channel=True, reduce_range=True)),
+    ("int8 MatMul per-channel, full range", dict(per_channel=True, reduce_range=False)),
+    ("int8 FFN-only (attention fp32)", dict(per_channel=True, reduce_range=True, exclude=["attention", "self_attn"])),
+    ("int8, first/last 2 layers fp32", dict(per_channel=True, reduce_range=True,
+                                            exclude=["layers.0/", "layers.1/", "layers.10/", "layers.11/", "layer.0/", "layer.1/", "layer.10/", "layer.11/"])),
+    ("fp16 weights", None),
+]
+
+
+def sweep_encoder(src: str, out_dir: str, audio: np.ndarray) -> list[dict]:
+    """Measures every encoder strategy on the same audio; returns rows sorted best first."""
+    os.makedirs(out_dir, exist_ok=True)
+    feed = lambda s: encoder_feed(s, audio)  # noqa: E731
+    base_ms = bench(src, feed)
+    rows = []
+    for i, (name, kw) in enumerate(ENCODER_VARIANTS):
+        dst = os.path.join(out_dir, f"encoder_v{i}.onnx")
+        try:
+            if kw is None:
+                from onnxconverter_common import float16
+
+                onnx.save(float16.convert_float_to_float16(onnx.load(src), keep_io_types=True), dst)
+            else:
+                quantize("encoder", src, dst, None, **kw)
+            par = parity_encoder(src, dst, audio)
+            rows.append({"variant": name, "file": dst, "mb": round(os.path.getsize(dst) / 1e6, 1),
+                         "cos_mean": round(par["cosine_mean"], 4), "cos_p5": round(par["cosine_p5"], 4),
+                         "ms": round(bench(dst, feed), 1), "fp32_ms": round(base_ms, 1), "pass": par["pass"]})
+        except Exception as e:  # noqa: BLE001
+            rows.append({"variant": name, "error": str(e)[:200], "pass": False, "cos_mean": 0, "mb": 0})
+    # Passing variants first (smallest wins), then by fidelity.
+    rows.sort(key=lambda r: (not r["pass"], r["mb"] if r["pass"] else -r["cos_mean"]))
+    return rows
 
 
 def bench(path: str, feed_fn, runs: int = 3) -> float:
@@ -235,7 +284,17 @@ def main() -> int:
     q.add_argument("--report", help="write JSON report here")
     q.add_argument("src")
     q.add_argument("dst")
+    w = sub.add_parser("sweep", help="compare all encoder strategies on real audio")
+    w.add_argument("--audio")
+    w.add_argument("--out", default="quant-sweep")
+    w.add_argument("src")
     args = ap.parse_args()
+
+    if args.cmd == "sweep":
+        rows = sweep_encoder(args.src, args.out, load_audio(args.audio))
+        json.dump(rows, open(os.path.join(args.out, "sweep.json"), "w"), indent=2)
+        print(json.dumps(rows, indent=2))
+        return 0
 
     if args.cmd == "analyze":
         print(json.dumps(analyze(args.model), indent=2))
