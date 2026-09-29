@@ -111,7 +111,8 @@ file if the release is unreachable (for example while the repository is private)
 
 Weights are stored as FP16, each followed by a `Cast` to FP32 that ONNX Runtime folds away when the session is created. The download halves
 and the change is at the level of the vocoder's own noise. CI (`tools/rvc/ci_export_voice.py`) exports a voice with the real RVC model code both ways
-and gates the difference at 1 dB. Full FP16 compute is both less accurate and slower on CPUs without native FP16 arithmetic, so it is only kept for
+and gates the difference at 1 dB. In the real-model run, the 111 MB community voice becomes 56 MB and converts
+speech with the same RTF and pitch tracking (`dio-fp16-voice` case). Full FP16 compute is both less accurate and slower on CPUs without native FP16 arithmetic, so it is only kept for
 encoder experiments (`to_fp16`). That path repairs several `onnxconverter-common` defects that otherwise produce models ONNX Runtime refuses to load:
 * graph-internal `Cast(to=FLOAT)` nodes whose outputs the converter retyped (HuBERT's attention mask);
 * graph outputs that are also consumed inside the graph (w-okada's `unit12 → units9`);

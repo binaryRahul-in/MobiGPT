@@ -391,7 +391,7 @@ ENCODER_VARIANTS = [
     ("int8 FFN-only (attention fp32)", dict(per_channel=True, reduce_range=True, exclude=["attention", "self_attn"])),
     ("int8, first/last 2 layers fp32", dict(per_channel=True, reduce_range=True,
                                             exclude=["layers.0/", "layers.1/", "layers.10/", "layers.11/", "layer.0/", "layer.1/", "layer.10/", "layer.11/"])),
-    ("fp16 weights", None),
+    ("fp16 weights, fp32 compute", None),
 ]
 
 
@@ -405,7 +405,7 @@ def sweep_encoder(src: str, out_dir: str, audio: np.ndarray) -> list[dict]:
         dst = os.path.join(out_dir, f"encoder_v{i}.onnx")
         try:
             if kw is None:
-                to_fp16(src, dst)
+                fp16_weights(src, dst)
             else:
                 quantize("encoder", src, dst, None, **kw)
             par = parity_encoder(src, dst, audio)
