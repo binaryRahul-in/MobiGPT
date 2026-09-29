@@ -486,13 +486,19 @@ export class VoiceStore {
     (await this.engineProvider())?.cancel();
   }
 
-  async convertText(text: string, ttsVoiceId = '', language = ''): Promise<ConversionRecord> {
+  /** Renders text with the operating system's (offline) TTS into a WAV file. */
+  async synthesizeSystem(text: string, ttsVoiceId = '', language = ''): Promise<string> {
     if (!VoiceNative) {
       throw new Error('Text-to-speech is unavailable in this build');
     }
     await ensureDirs();
     const wav = `${Paths.recordings}/tts-${Date.now()}.wav`;
     await VoiceNative.synthesizeSpeech(text, wav, language, ttsVoiceId, 1.0, 1.0);
+    return wav;
+  }
+
+  async convertText(text: string, ttsVoiceId = '', language = ''): Promise<ConversionRecord> {
+    const wav = await this.synthesizeSystem(text, ttsVoiceId, language);
     return this.convert(wav, `“${text.slice(0, 40)}${text.length > 40 ? '…' : ''}”`);
   }
 

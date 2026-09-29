@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include "../tts/Kokoro.h"
 #include "Pipeline.h"
 
 namespace mobigpt::audio {
@@ -57,6 +58,20 @@ struct BenchmarkResult {
   std::vector<std::string> providers;
 };
 
+struct TtsInfo {
+  std::string provider;
+  std::vector<std::string> warnings;
+};
+
+struct TtsResult {
+  std::string path;
+  double seconds = 0;
+  int sampleRate = 0;
+  double inferMs = 0;
+  double realtimeFactor = 0;  // compute / audio
+  size_t windows = 0;
+};
+
 class VoiceService {
  public:
   static VoiceService& instance();
@@ -89,12 +104,25 @@ class VoiceService {
   std::vector<float> analyzePitch(const std::string& wavPath, const std::string& method, const std::string& modelPath);
   BenchmarkResult benchmark(double audioSeconds);
 
+  // Neural TTS (Kokoro). Independent of the RVC engine: both can be loaded.
+  TtsInfo ttsLoad(const std::string& modelPath, const SessionConfig& cfg);
+  void ttsUnload();
+  bool ttsIsLoaded() const;
+  // `windows` are phoneme-token windows (<= 510 ids each); `pausesAfter` seconds of silence after each.
+  TtsResult ttsSynthesize(const std::vector<std::vector<int64_t>>& windows, const std::vector<float>& pausesAfter,
+                          const std::string& voicePath, float speed, const std::string& outWav);
+
  private:
   VoiceService() = default;
   ~VoiceService();
 
   mutable std::mutex engineMutex_;
   std::unique_ptr<RvcEngine> engine_;
+
+  mutable std::mutex ttsMutex_;
+  std::unique_ptr<tts::KokoroModel> tts_;
+  std::string ttsVoicePath_;
+  std::unique_ptr<tts::KokoroVoice> ttsVoice_;
   std::atomic<bool> cancel_{false};
 
   // live

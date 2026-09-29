@@ -129,4 +129,35 @@ export interface VoiceJsi {
   inspect(path: string): Promise<ModelInspection>;
   analyzePitch(path: string, method: PitchMethod, modelPath?: string): Promise<number[]>;
   benchmark(seconds: number): Promise<VoiceBenchmark>;
+
+  // Neural text-to-speech (Kokoro-82M). Independent of the RVC engine.
+  ttsLoad(modelPath: string, options?: {accelerator?: Accelerator; threads?: number; lowMemory?: boolean}): Promise<TtsModelInfo>;
+  ttsUnload(): Promise<void>;
+  ttsIsLoaded(): boolean;
+  ttsSynthesize(request: TtsRequest): Promise<TtsResult>;
+}
+
+export interface TtsModelInfo {
+  provider: string;
+  warnings: string[];
+}
+
+export interface TtsRequest {
+  /** Phoneme-token windows (<= 510 ids each), from the app's G2P. */
+  windows: number[][];
+  /** Seconds of silence after each window. */
+  pauses: number[];
+  /** Kokoro voice style file (N x 256 float32). */
+  voicePath: string;
+  speed: number;
+  outputPath: string;
+}
+
+export interface TtsResult {
+  path: string;
+  seconds: number;
+  sampleRate: number;
+  inferMs: number;
+  realtimeFactor: number;
+  windows: number;
 }

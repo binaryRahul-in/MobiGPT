@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "strict": true,
+    "resolveJsonModule": true,
+    "outDir": "../../build/tts-js",
+    "rootDir": "../../src/services/tts",
+    "skipLibCheck": true
+  },
+  "files": ["../../src/services/tts/g2p.ts", "../../src/services/tts/vocab.ts"]
+}

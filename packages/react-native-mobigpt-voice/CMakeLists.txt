@@ -43,7 +43,7 @@ add_executable(mobigpt-rvc tools/cli.cpp)
 target_link_libraries(mobigpt-rvc PRIVATE mobigpt_rvc_core)
 
 enable_testing()
-add_executable(rvc_tests tests/test_main.cpp tests/test_dsp.cpp tests/test_pitch.cpp tests/test_pipeline.cpp)
+add_executable(rvc_tests tests/test_main.cpp tests/test_dsp.cpp tests/test_pitch.cpp tests/test_pipeline.cpp tests/test_tts.cpp)
 target_link_libraries(rvc_tests PRIVATE mobigpt_rvc_core)
 target_include_directories(rvc_tests PRIVATE tests)
 set(MOBIGPT_FIXTURES ${CMAKE_CURRENT_BINARY_DIR}/fixtures CACHE PATH "Generated test fixtures")

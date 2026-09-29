@@ -106,5 +106,146 @@
   "search": {
     "query": "rvc onnx",
     "hint": "Any RVC v1/v2 synthesiser exported to ONNX (RVC WebUI \"Export ONNX\" tab or w-okada voice-changer) works. Convert .pth voices with tools/rvc/export_voice_onnx.py."
+  },
+  "tts": {
+    "models": [
+      {
+        "id": "kokoro-82m-int8",
+        "name": "Kokoro-82M v1.0",
+        "precision": "int8",
+        "sizeBytes": 92361271,
+        "license": "Apache-2.0",
+        "sampleRate": 24000,
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro-v1.0.int8.onnx",
+          "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "onnx/model_quantized.onnx",
+        "notes": "82M-parameter StyleTTS2/ISTFTNet model. INT8 weights; ~0.8x real time on a 4-core x86 CPU."
+      }
+    ],
+    "voices": [
+      {
+        "id": "af_heart",
+        "name": "Heart",
+        "accent": "American English",
+        "gender": "female",
+        "description": "Warm, the reference voice",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_af_heart.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/af_heart.bin"
+      },
+      {
+        "id": "af_bella",
+        "name": "Bella",
+        "accent": "American English",
+        "gender": "female",
+        "description": "Bright and expressive",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_af_bella.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/af_bella.bin"
+      },
+      {
+        "id": "af_sarah",
+        "name": "Sarah",
+        "accent": "American English",
+        "gender": "female",
+        "description": "Calm narrator",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_af_sarah.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/af_sarah.bin"
+      },
+      {
+        "id": "am_michael",
+        "name": "Michael",
+        "accent": "American English",
+        "gender": "male",
+        "description": "Clear and neutral",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_am_michael.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/am_michael.bin"
+      },
+      {
+        "id": "am_fenrir",
+        "name": "Fenrir",
+        "accent": "American English",
+        "gender": "male",
+        "description": "Deep",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_am_fenrir.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/am_fenrir.bin"
+      },
+      {
+        "id": "bf_emma",
+        "name": "Emma",
+        "accent": "British English",
+        "gender": "female",
+        "description": "British accent",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_bf_emma.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/bf_emma.bin"
+      },
+      {
+        "id": "bm_george",
+        "name": "George",
+        "accent": "British English",
+        "gender": "male",
+        "description": "British accent",
+        "sizeBytes": 522240,
+        "license": "Apache-2.0",
+        "urls": [
+          "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/kokoro_voice_bm_george.bin"
+        ],
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "file": "voices/bm_george.bin"
+      }
+    ],
+    "lexicon": {
+      "id": "misaki-en-us",
+      "name": "misaki US English lexicon",
+      "license": "Apache-2.0",
+      "sizeBytes": 6099986,
+      "files": [
+        {
+          "name": "us_gold.json",
+          "urls": [
+            "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/misaki_us_gold.json",
+            "https://raw.githubusercontent.com/hexgrad/misaki/main/misaki/data/us_gold.json"
+          ]
+        },
+        {
+          "name": "us_silver.json",
+          "urls": [
+            "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/misaki_us_silver.json",
+            "https://raw.githubusercontent.com/hexgrad/misaki/main/misaki/data/us_silver.json"
+          ]
+        }
+      ]
+    }
   }
 }

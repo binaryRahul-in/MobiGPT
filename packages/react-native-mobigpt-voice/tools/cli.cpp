@@ -27,6 +27,8 @@ void usage() {
                "                      [--rms-mix R] [--speaker ID] IN.wav OUT.wav\n"
                "  mobigpt-rvc inspect MODEL.onnx\n"
                "  mobigpt-rvc pitch --method M [--pitch-model P] IN.wav\n"
+               "  mobigpt-rvc tts --model KOKORO.onnx --voice VOICE.bin --tokens \"ids,…;ids,…\" [--pauses \"s;s\"]\n"
+               "                  [--speed 1.0] OUT.wav\n"
                "  mobigpt-rvc info\n");
 }
 
@@ -97,6 +99,41 @@ int main(int argc, char** argv) {
     if (cmd == "pitch" && pos.size() == 1) {
       auto f0 = svc.analyzePitch(pos[0], opt.count("--method") ? opt["--method"] : "dio", opt["--pitch-model"]);
       for (size_t i = 0; i < f0.size(); ++i) std::printf("%.2f\t%.2f\n", i * 0.01, f0[i]);
+      return 0;
+    }
+    if (cmd == "tts" && pos.size() == 1) {
+      // --tokens: windows separated by ';', ids by ','. --pauses: seconds after each window.
+      auto split = [](const std::string& s, char sep) {
+        std::vector<std::string> out;
+        size_t start = 0;
+        while (start <= s.size()) {
+          const size_t end = s.find(sep, start);
+          out.push_back(s.substr(start, end == std::string::npos ? std::string::npos : end - start));
+          if (end == std::string::npos) break;
+          start = end + 1;
+        }
+        return out;
+      };
+      std::vector<std::vector<int64_t>> windows;
+      for (const auto& w : split(opt["--tokens"], ';')) {
+        std::vector<int64_t> ids;
+        for (const auto& t : split(w, ',')) {
+          if (!t.empty()) ids.push_back(std::strtoll(t.c_str(), nullptr, 10));
+        }
+        windows.push_back(std::move(ids));
+      }
+      std::vector<float> pauses;
+      if (opt.count("--pauses")) {
+        for (const auto& p : split(opt["--pauses"], ';')) pauses.push_back(p.empty() ? 0.f : std::strtof(p.c_str(), nullptr));
+      }
+      SessionConfig sc;
+      if (opt.count("--accel")) sc.accelerator = acceleratorFromString(opt["--accel"]);
+      const auto info = svc.ttsLoad(opt["--model"], sc);
+      std::fprintf(stderr, "tts provider %s\n", info.provider.c_str());
+      const float speed = opt.count("--speed") ? std::strtof(opt["--speed"].c_str(), nullptr) : 1.0f;
+      const auto r = svc.ttsSynthesize(windows, pauses, opt["--voice"], speed, pos[0]);
+      std::printf("{\"seconds\":%.3f,\"sampleRate\":%d,\"inferMs\":%.1f,\"rtf\":%.4f,\"windows\":%zu}\n", r.seconds, r.sampleRate,
+                  r.inferMs, r.realtimeFactor, r.windows);
       return 0;
     }
     if (cmd == "convert" && pos.size() == 2) {

@@ -10,6 +10,8 @@ const nameSizes = new Map<string, number>();
 let nextJob = 1;
 const cancelled = new Set<number>();
 const stalls = new Set<string>();
+const texts = new Map<string, string>();
+const remoteTexts = new Map<string, string>();
 
 export function __reset() {
   files.clear();
@@ -17,6 +19,8 @@ export function __reset() {
   nameSizes.clear();
   cancelled.clear();
   stalls.clear();
+  texts.clear();
+  remoteTexts.clear();
   dirs.clear();
   ['/docs', '/caches', '/tmp'].forEach(d => dirs.add(d));
 }
@@ -29,6 +33,18 @@ export function __setRemoteName(name: string, size: number) {
 }
 export function __setRemote(url: string, size: number, status = 200) {
   remotes.set(url, {size, status});
+}
+/** Text served for any URL ending in `/<name>`; readable afterwards with readFile. */
+export function __setRemoteText(name: string, text: string) {
+  remoteTexts.set(name, text);
+  nameSizes.set(name, text.length);
+}
+export async function readFile(p: string, _encoding?: string) {
+  const t = texts.get(p);
+  if (t == null) {
+    throw new Error(`ENOENT ${p}`);
+  }
+  return t;
 }
 /** The connection opens, then no bytes ever arrive (until the job is stopped). */
 export function __setStalled(url: string) {
@@ -56,6 +72,11 @@ export async function moveFile(a: string, b: string) {
   }
   files.delete(a);
   files.set(b, s);
+  const t = texts.get(a);
+  if (t != null) {
+    texts.delete(a);
+    texts.set(b, t);
+  }
 }
 export async function stat(p: string) {
   const s = files.get(p);
@@ -94,6 +115,10 @@ export function downloadFile(opts: {
     }
     if (remote.status === 200) {
       files.set(opts.toFile, remote.size);
+      const text = remoteTexts.get(opts.fromUrl.split('/').pop() ?? '');
+      if (text != null) {
+        texts.set(opts.toFile, text);
+      }
     }
     return {jobId, statusCode: remote.status, bytesWritten: remote.size};
   })();

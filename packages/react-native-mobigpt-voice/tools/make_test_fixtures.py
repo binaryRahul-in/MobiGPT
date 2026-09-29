@@ -243,6 +243,47 @@ def mel_reference(out):
     write("mel_fcpe.bin", np.log(np.maximum(fb_sl @ S2, 1e-5)))
 
 
+def kokoro(path, layout="kokoro-onnx"):
+    """Kokoro TTS I/O contract. audio = mean(style) / speed, repeated 100x per input token
+    (pads included), so tests can check padding, style-row selection and speed exactly."""
+    tokens_name, out_name = ("tokens", "audio") if layout == "kokoro-onnx" else ("input_ids", "waveform")
+    inputs = [
+        helper.make_tensor_value_info(tokens_name, TensorProto.INT64, [1, "T"]),
+        helper.make_tensor_value_info("style", TensorProto.FLOAT, [1, 256]),
+        helper.make_tensor_value_info("speed", TensorProto.FLOAT, [1]),
+    ]
+    inits = [
+        const("idx1", np.array(1, dtype=np.int64)),
+        const("per_token", np.array(100, dtype=np.int64)),
+        const("ax0", np.array([0], dtype=np.int64)),
+        const("one_shape", np.array([1], dtype=np.int64)),
+    ]
+    nodes = [
+        helper.make_node("Shape", [tokens_name], ["tshape"]),
+        helper.make_node("Gather", ["tshape", "idx1"], ["t"]),
+        helper.make_node("Mul", ["t", "per_token"], ["n"]),
+        helper.make_node("Unsqueeze", ["n", "ax0"], ["n1"]),
+        helper.make_node("ReduceMean", ["style"], ["m"], keepdims=0),
+        helper.make_node("Reshape", ["m", "one_shape"], ["m1"]),
+        helper.make_node("Tile", ["m1", "n1"], ["rep"]),
+        helper.make_node("Div", ["rep", "speed"], ["flat"]),
+    ]
+    out_shape = ["N"]
+    if layout == "onnx-community":
+        inits.append(const("row_shape", np.array([1, -1], dtype=np.int64)))
+        nodes.append(helper.make_node("Reshape", ["flat", "row_shape"], [out_name]))
+        out_shape = [1, "N"]
+    else:
+        nodes.append(helper.make_node("Identity", ["flat"], [out_name]))
+    g = helper.make_graph(nodes, "kokoro", inputs, [helper.make_tensor_value_info(out_name, TensorProto.FLOAT, out_shape)], inits)
+    save(helper.make_model(g), path)
+
+
+def kokoro_voice(path, rows=510):
+    """Row r is filled with r + 1, so the style chosen for k tokens has mean k."""
+    np.repeat(np.arange(1, rows + 1, dtype=np.float32)[:, None], 256, axis=1).astype("<f4").tofile(path)
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "fixtures"
     os.makedirs(out, exist_ok=True)
@@ -264,6 +305,9 @@ def main():
     )
     synth(os.path.join(out, "synth_nof0_32k.onnx"), "webui", 32000, with_f0=False, meta={"sample_rate": "32000"})
     synth(os.path.join(out, "synth_v1_40k.onnx"), "webui", 40000, channels=256)
+    kokoro(os.path.join(out, "kokoro.onnx"))
+    kokoro(os.path.join(out, "kokoro_community.onnx"), "onnx-community")
+    kokoro_voice(os.path.join(out, "kokoro_voice.bin"))
     try:
         mel_reference(out)
     except ImportError:

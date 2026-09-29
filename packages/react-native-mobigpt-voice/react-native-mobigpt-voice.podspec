@@ -16,6 +16,7 @@ Pod::Spec.new do |s|
   s.source_files = [
     "ios/**/*.{h,m,mm}",
     "cpp/rvc/**/*.{h,cpp}",
+    "cpp/tts/**/*.{h,cpp}",
     "cpp/jsi/**/*.{h,cpp}",
     "cpp/platform/AudioIO.h",
     "cpp/third_party/world/**/*.{h,cpp}",

@@ -6,6 +6,7 @@ flows:
   - "03-*"
   - "04-*"
   - "05-*"
+  - "06-*"
 executionOrder:
   continueOnFailure: true
   flowsOrder:
@@ -14,3 +15,4 @@ executionOrder:
     - 03-features-voice
     - 04-llm-chat
     - 05-voice-engine
+    - 06-neural-tts

@@ -9,6 +9,7 @@ export const Paths = {
   voiceBase: `${root}/voice/base`,
   recordings: `${root}/voice/recordings`,
   outputs: `${root}/voice/outputs`,
+  tts: `${root}/tts`,
   temp: `${FS.CachesDirectoryPath}/mobigpt`,
 };
 

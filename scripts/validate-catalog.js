@@ -28,6 +28,9 @@ async function main() {
     ...voices.encoders.map(m => ({group: 'encoders', e: m})),
     ...voices.pitch.map(m => ({group: 'pitch', e: m})),
     ...voices.voices.map(m => ({group: 'voices', e: m})),
+    // Neural TTS: the Hugging Face copies are the fallback behind the release mirror.
+    ...(voices.tts?.models ?? []).map(m => ({group: 'tts', e: m})),
+    ...(voices.tts?.voices ?? []).map(m => ({group: 'tts-voices', e: m})),
   ];
   const cache = new Map();
   let failures = 0;

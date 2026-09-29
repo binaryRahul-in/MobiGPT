@@ -1,0 +1,83 @@
+{
+"A": "ˈA",
+"B": "bˈi",
+"G": "ʤˈi",
+"I": "ˈI",
+"IN": {
+"DEFAULT": "ɪn",
+"NOUN": null
+},
+"M": "ˈɛm",
+"O": "ˈO",
+"P": "pˈi",
+"T": "tˈi",
+"a": "A",
+"and": "ænd",
+"apples": "ˈæpᵊlz",
+"art": "ˈɑɹt",
+"convert": {
+"DEFAULT": "kənvˈɜɹt",
+"NOUN": "kˈɑnvˌɜɹt"
+},
+"dollar": "dˈɑləɹ",
+"dollars": "dˈɑləɹz",
+"don't": "dˈOnt",
+"eight": "ˈAt",
+"fifty": "fˈɪfti",
+"first": "fˈɜɹst",
+"five": "fˈIv",
+"four": "fˈɔɹ",
+"get": {
+"DEFAULT": "ɡɛt",
+"None": "ɡˈɛt"
+},
+"had": {
+"DEFAULT": "hæd",
+"None": "hˌæd"
+},
+"hello": "həlˈO",
+"hundred": "hˈʌndɹəd",
+"i": "ˈI",
+"in": "ɪn",
+"it's": "ɪts",
+"made": "mˌAd",
+"my": {
+"DEFAULT": "mI",
+"None": "mˈI"
+},
+"nine": "nˈIn",
+"nineteen": "nˌIntˈin",
+"ninety": "nˈIndi",
+"number": "nˈʌmbəɹ",
+"of": "ʌv",
+"on": "ˌɔn",
+"one": "wˈʌn",
+"pears": "pˈɛɹz",
+"percent": "pəɹsˈɛnt",
+"phone": "fˈOn",
+"play": "plˈA",
+"point": "pˈYnt",
+"read": {
+"ADJ": "ɹˈɛd",
+"DEFAULT": "ɹˈid",
+"VBD": "ɹˈɛd",
+"VBN": "ɹˈɛd",
+"VBP": "ɹˈɛd"
+},
+"seven": "sˈɛvən",
+"six": "sˈɪks",
+"state": "stˈAt",
+"ten": "tˈɛn",
+"the": "ði",
+"this": {
+"DEFAULT": "ðɪs",
+"None": "ðˈɪs"
+},
+"thousand": "θˈWzᵊnd",
+"three": "θɹˈi",
+"twenty": "twˈɛnti",
+"two": "tˈu",
+"voice": "vˈYs",
+"was": "wʌz",
+"world": "wˈɜɹld"
+}

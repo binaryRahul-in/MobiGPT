@@ -1,5 +1,6 @@
 #include "VoiceService.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -373,6 +374,49 @@ BenchmarkResult VoiceService::benchmark(double seconds) {
   r.realtimeFactor = st.realtimeFactor;
   r.outputSampleRate = st.outputSampleRate;
   r.providers = engine_->info().providers;
+  return r;
+}
+
+// ------------------------------------------------------------------ TTS
+
+TtsInfo VoiceService::ttsLoad(const std::string& modelPath, const SessionConfig& cfg) {
+  auto model = std::make_unique<tts::KokoroModel>(modelPath, cfg);
+  std::lock_guard<std::mutex> lk(ttsMutex_);
+  tts_ = std::move(model);
+  return {tts_->provider(), tts_->warnings()};
+}
+
+void VoiceService::ttsUnload() {
+  std::lock_guard<std::mutex> lk(ttsMutex_);
+  tts_.reset();
+  ttsVoice_.reset();
+  ttsVoicePath_.clear();
+}
+
+bool VoiceService::ttsIsLoaded() const {
+  std::lock_guard<std::mutex> lk(ttsMutex_);
+  return tts_ != nullptr;
+}
+
+TtsResult VoiceService::ttsSynthesize(const std::vector<std::vector<int64_t>>& windows, const std::vector<float>& pausesAfter,
+                                      const std::string& voicePath, float speed, const std::string& outWav) {
+  std::lock_guard<std::mutex> lk(ttsMutex_);
+  if (!tts_) throw std::runtime_error("text-to-speech model is not loaded");
+  if (!ttsVoice_ || ttsVoicePath_ != voicePath) {
+    ttsVoice_ = std::make_unique<tts::KokoroVoice>(tts::KokoroVoice::load(voicePath));
+    ttsVoicePath_ = voicePath;
+  }
+  tts::SynthesisTimings t;
+  const auto audio = tts::synthesize(*tts_, *ttsVoice_, windows, pausesAfter, std::clamp(speed, 0.5f, 2.0f), &t);
+  if (audio.empty()) throw std::runtime_error("nothing to synthesise");
+  writeWavPcm16(outWav, audio.data(), audio.size(), tts::kKokoroSampleRate);
+  TtsResult r;
+  r.path = outWav;
+  r.sampleRate = tts::kKokoroSampleRate;
+  r.seconds = static_cast<double>(audio.size()) / tts::kKokoroSampleRate;
+  r.inferMs = t.inferMs;
+  r.windows = t.windows;
+  r.realtimeFactor = r.seconds > 0 ? (t.inferMs / 1000.0) / r.seconds : 0;
   return r;
 }
 

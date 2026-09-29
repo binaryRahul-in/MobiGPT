@@ -12,7 +12,6 @@ import {
   SegmentedButtons,
   Snackbar,
   Text,
-  TextInput,
   useTheme,
 } from 'react-native-paper';
 
@@ -24,6 +23,7 @@ import {useStores} from '../stores/RootStore';
 import {voicesCatalog} from '../stores/VoiceStore';
 import {spacing} from '../theme';
 import {formatBytes, formatDuration} from '../utils/format';
+import {TtsPanel} from './voice/TtsPanel';
 
 type Mode = 'record' | 'file' | 'text' | 'live';
 
@@ -31,7 +31,6 @@ export const VoiceScreen = observer(function VoiceScreen({navigation}: TabScreen
   const theme = useTheme();
   const {voice, settings, device} = useStores();
   const [mode, setMode] = useState<Mode>('record');
-  const [text, setText] = useState('Hello! This voice was converted entirely on my phone.');
   const [msg, setMsg] = useState<string | null>(null);
 
   const guard = async (fn: () => Promise<unknown>, done?: string) => {
@@ -212,19 +211,7 @@ export const VoiceScreen = observer(function VoiceScreen({navigation}: TabScreen
           </Section>
         ) : null}
 
-        {mode === 'text' ? (
-          <Section title="Text → speech → voice" subtitle="Offline system TTS, then RVC" icon="text-to-speech">
-            <TextInput mode="outlined" multiline value={text} onChangeText={setText} style={styles.textInput} />
-            <Button
-              mode="contained"
-              icon="auto-fix"
-              disabled={!voice.ready || voice.converting || !text.trim()}
-              onPress={() => guard(() => voice.convertText(text), 'Converted')}
-            >
-              Speak in this voice
-            </Button>
-          </Section>
-        ) : null}
+        {mode === 'text' ? <TtsPanel onMessage={setMsg} /> : null}
 
         {mode === 'live' ? (
           <Section title="Live voice changer" subtitle={`Latency ≈ ${v?.chunkSeconds ?? 2.5}s chunk + compute`} icon="broadcast">
@@ -463,6 +450,5 @@ const styles = StyleSheet.create({
   chips: {gap: spacing.sm, paddingVertical: 4},
   chipsWrap: {flexDirection: 'row', flexWrap: 'wrap', gap: 6},
   row: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap'},
-  textInput: {minHeight: 96},
   installBox: {gap: spacing.sm},
 });

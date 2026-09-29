@@ -241,10 +241,12 @@ export const FEATURES: FeatureDefinition[] = [
   {
     id: 'ttsVoice',
     title: 'Text → speech → voice',
-    summary: 'Type text, synthesise it with the offline system TTS, then convert it into any RVC voice.',
+    summary:
+      'Type text and hear it with Kokoro-82M, a neural TTS model running on-device (or the offline system voice), optionally converted into any RVC voice.',
     icon: 'text-to-speech',
     dependsOn: ['voice'],
-    requirement: {nativeModule: 'voice', minRamGB: 2.5, recommendedRamGB: 4},
+    requirement: {nativeModule: 'voice', minRamGB: 2.5, recommendedRamGB: 4, storageBytes: 100 * MB},
+    footprint: '≈ 98 MB (Kokoro INT8 + dictionary + one voice)',
   },
   {
     id: 'benchmarks',

@@ -10,6 +10,7 @@ import {ChatStore} from './ChatStore';
 import {DeviceStore} from './DeviceStore';
 import {ModelStore} from './ModelStore';
 import {SettingsStore} from './SettingsStore';
+import {TtsStore} from './TtsStore';
 import {UpdateStore} from './UpdateStore';
 import {VoiceStore} from './VoiceStore';
 
@@ -19,6 +20,7 @@ export class RootStore {
   models: ModelStore;
   chat: ChatStore;
   voice: VoiceStore;
+  tts: TtsStore;
   bench: BenchmarkStore;
   updates: UpdateStore;
 
@@ -29,6 +31,7 @@ export class RootStore {
     this.models = new ModelStore(this.settings, () => this.device.profile, persist);
     this.chat = new ChatStore(this.settings, this.models, persist);
     this.voice = new VoiceStore(this.settings, undefined, persist);
+    this.tts = new TtsStore(this.settings, undefined, persist);
     this.bench = new BenchmarkStore(this.settings, this.device, this.models, this.voice, persist);
     this.updates = new UpdateStore();
 

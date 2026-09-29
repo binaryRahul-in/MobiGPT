@@ -411,6 +411,76 @@ void install(jsi::Runtime& rt, std::shared_ptr<react::CallInvoker> invoker) {
     });
   });
 
+  // ------------------------------------------------------------ neural TTS
+
+  setFn(rt, api, "ttsLoad", 2, [&svc](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t n) -> jsi::Value {
+    const std::string model = argString(rt, args, n, 0, "modelPath");
+    rvc::SessionConfig sc;
+    if (n > 1 && args[1].isObject()) {
+      auto o = args[1].asObject(rt);
+      sc.accelerator = rvc::acceleratorFromString(str(rt, o, "accelerator", "auto"));
+      sc.intraOpThreads = static_cast<int>(num(rt, o, "threads", 0));
+      sc.lowMemory = flag(rt, o, "lowMemory", false);
+    }
+    return makePromise(rt, [model, sc, &svc]() -> Converter {
+      auto info = svc.ttsLoad(model, sc);
+      return [info](jsi::Runtime& rt) {
+        jsi::Object o(rt);
+        o.setProperty(rt, "provider", jsi::String::createFromUtf8(rt, info.provider));
+        o.setProperty(rt, "warnings", strings(rt, info.warnings));
+        return jsi::Value(std::move(o));
+      };
+    });
+  });
+
+  setFn(rt, api, "ttsUnload", 0, [&svc](jsi::Runtime& rt, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
+    return makePromise(rt, [&svc]() -> Converter {
+      svc.ttsUnload();
+      return undefinedResult();
+    });
+  });
+
+  setFn(rt, api, "ttsIsLoaded", 0, [&svc](jsi::Runtime&, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
+    return jsi::Value(svc.ttsIsLoaded());
+  });
+
+  // ttsSynthesize({windows: number[][], pauses: number[], voicePath, speed, outputPath})
+  setFn(rt, api, "ttsSynthesize", 1, [&svc](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t n) -> jsi::Value {
+    if (n < 1 || !args[0].isObject()) throw jsi::JSError(rt, "ttsSynthesize(request) expects an object");
+    auto o = args[0].asObject(rt);
+    std::vector<std::vector<int64_t>> windows;
+    if (o.hasProperty(rt, "windows")) {
+      auto arr = o.getProperty(rt, "windows").asObject(rt).asArray(rt);
+      for (size_t i = 0; i < arr.size(rt); ++i) {
+        auto w = arr.getValueAtIndex(rt, i).asObject(rt).asArray(rt);
+        std::vector<int64_t> ids(w.size(rt));
+        for (size_t j = 0; j < ids.size(); ++j) ids[j] = static_cast<int64_t>(w.getValueAtIndex(rt, j).asNumber());
+        windows.push_back(std::move(ids));
+      }
+    }
+    std::vector<float> pauses;
+    if (o.hasProperty(rt, "pauses")) {
+      auto arr = o.getProperty(rt, "pauses").asObject(rt).asArray(rt);
+      for (size_t i = 0; i < arr.size(rt); ++i) pauses.push_back(static_cast<float>(arr.getValueAtIndex(rt, i).asNumber()));
+    }
+    const std::string voice = str(rt, o, "voicePath");
+    const std::string out = str(rt, o, "outputPath");
+    const float speed = static_cast<float>(num(rt, o, "speed", 1.0));
+    return makePromise(rt, [windows = std::move(windows), pauses = std::move(pauses), voice, out, speed, &svc]() -> Converter {
+      auto r = svc.ttsSynthesize(windows, pauses, voice, speed, out);
+      return [r](jsi::Runtime& rt) {
+        jsi::Object o(rt);
+        o.setProperty(rt, "path", jsi::String::createFromUtf8(rt, r.path));
+        o.setProperty(rt, "seconds", r.seconds);
+        o.setProperty(rt, "sampleRate", r.sampleRate);
+        o.setProperty(rt, "inferMs", r.inferMs);
+        o.setProperty(rt, "realtimeFactor", r.realtimeFactor);
+        o.setProperty(rt, "windows", static_cast<double>(r.windows));
+        return jsi::Value(std::move(o));
+      };
+    });
+  });
+
   rt.global().setProperty(rt, "__MobiGPTVoice", api);
 }
 

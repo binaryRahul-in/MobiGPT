@@ -5,12 +5,19 @@ name: Publish optimised voice models
 # `models-v1` release that the app's catalogue points at.
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Which assets to (re)publish'
+        type: choice
+        options: [all, contentvec, tts]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
   contentvec-int8:
+    if: inputs.only != 'tts'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -52,3 +59,50 @@ jobs:
           files: |
             out/contentvec_768l12_int8_pc.onnx
             out/contentvec_768l12_int8_pc.json
+
+  # Mirrors the neural TTS pack so the app has one pinned, reliable source:
+  # Kokoro-82M v1.0 INT8 (Apache-2.0, ONNX export by thewh1teagle/kokoro-onnx, MIT),
+  # seven English voices as raw N x 256 float32 styles, and misaki's US lexicons
+  # (hexgrad/misaki 0.9.4, Apache-2.0) used by the app's G2P.
+  kokoro-tts:
+    if: inputs.only != 'contentvec'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy onnxruntime==1.24.3 misaki==0.9.4
+      - name: Fetch and repackage
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          base=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+          curl -fsSL -o out/kokoro-v1.0.int8.onnx "$base/kokoro-v1.0.int8.onnx"
+          curl -fsSL -o voices.npz "$base/voices-v1.0.bin"
+          python - <<'PY'
+          import json, os, shutil, numpy as np, onnxruntime as ort, misaki
+          s = ort.InferenceSession("out/kokoro-v1.0.int8.onnx")
+          assert [i.name for i in s.get_inputs()] == ["tokens", "style", "speed"], s.get_inputs()
+          v = np.load("voices.npz")
+          for name in ["af_heart", "af_bella", "af_sarah", "am_michael", "am_fenrir", "bf_emma", "bm_george"]:
+              a = v[name].reshape(-1, 256).astype("<f4")
+              assert a.shape == (510, 256), a.shape
+              a.tofile(f"out/kokoro_voice_{name}.bin")
+          data = os.path.join(os.path.dirname(misaki.__file__), "data")
+          for f in ["us_gold.json", "us_silver.json"]:
+              json.load(open(os.path.join(data, f)))  # must parse
+              shutil.copy(os.path.join(data, f), f"out/misaki_{f}")
+          PY
+          ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models-v1
+          name: MobiGPT voice models v1
+          prerelease: true
+          files: |
+            out/kokoro-v1.0.int8.onnx
+            out/kokoro_voice_*.bin
+            out/misaki_us_gold.json
+            out/misaki_us_silver.json

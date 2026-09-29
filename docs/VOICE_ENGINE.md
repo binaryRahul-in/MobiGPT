@@ -144,3 +144,32 @@ python tools/rvc/export_voice_onnx.py --rvc-repo rvc my_voice.pth my_voice.onnx 
 ```
 
 Import the `.onnx` in **Voice → Library → Mine → Import**, or push it to a Hugging Face repo and use **Hub** search.
+
+## Neural text-to-speech (Kokoro-82M)
+
+Voice Studio's **Text** mode can speak with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0), a
+StyleTTS2/ISTFTNet model, running in the same C++ engine as RVC. The output can be played as is or converted into the
+selected RVC voice. The operating system's voice is still available as an alternative.
+
+```
+text ──► TypeScript G2P (src/services/tts) ──► phoneme-token windows (≤ 510 ids)
+          misaki gold+silver lexicons,           │   (only small int arrays cross JSI)
+          -s/-ed/-ing rules, numbers, spelling   ▼
+                                    C++ KokoroModel (cpp/tts) on ONNX Runtime
+                                    style row = voice[token count − 1], speed
+                                                 ▼
+                                    24 kHz WAV ──► play, or ──► RVC conversion
+```
+
+| Piece | Details |
+|---|---|
+| Model | `kokoro-v1.0.int8.onnx` (92 MB). Both export layouts are detected: kokoro-onnx (`tokens → audio`) and onnx-community (`input_ids → waveform`). `speed` may be float or int. |
+| Voices | Seven English styles (`af_heart`, `af_bella`, `af_sarah`, `am_michael`, `am_fenrir`, `bf_emma`, `bm_george`), 522 KB each, as raw `510 × 256` float32 |
+| G2P | A port of misaki's lexicon path: gold/silver US dictionaries (≈ 180 k words), DEFAULT reading for heteronyms, misaki's `-s/-ed/-ing` morphology, numbers/years/ordinals/decimals read as words, compounds split, acronyms and unknown words spelled. misaki's spaCy part-of-speech tagging is not ported. |
+| Windows | Text is split at sentence ends, then clauses, then words, so no window exceeds 510 tokens; windows are joined natively with short pauses |
+| Sources | The `models-v1` release mirror first, then the upstream GitHub release / misaki repo, then Hugging Face (`onnx-community/Kokoro-82M-v1.0-ONNX`) |
+
+**Measured** (`tools/tts/ci_tts.py`, CI job `tts-real-model`): 15 sentences across three voices were synthesised through the
+app's G2P and the C++ engine, then transcribed by an independent recogniser (Moonshine tiny, sherpa-onnx). Word error rate
+was **0.000**. Speed is RTF ≈ 0.75–0.8 on a 4-vCPU x86 runner with the INT8 model. A 12-sentence paragraph is split into
+3 windows, and 1.5× speed shortens it by 1.54×.

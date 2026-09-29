@@ -145,6 +145,58 @@ jobs:
           git -C build/rvc-src checkout -q 7ef1986
           python tools/rvc/ci_export_voice.py --rvc-repo build/rvc-src --out build/voice-export
 
+  tts-real-model:
+    name: TTS · Kokoro-82M through the app's G2P + engine, checked by ASR
+    needs: native-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile --ignore-scripts
+        env:
+          RNLLAMA_SKIP_POSTINSTALL: '1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy soundfile sherpa-onnx misaki==0.9.4
+      - name: Build engine CLI
+        run: |
+          set -o pipefail
+          mkdir -p build/native
+          curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" | tar xz -C build/native
+          ORT_ROOT=$PWD/build/native/onnxruntime-linux-x64-${ORT_VERSION}
+          echo "LD_LIBRARY_PATH=$ORT_ROOT/lib" >> "$GITHUB_ENV"
+          cmake -S packages/react-native-mobigpt-voice -B build/rvc -DORT_ROOT=$ORT_ROOT -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/rvc -j4 --target mobigpt-rvc
+      - name: Fetch Kokoro-82M INT8, voices and a Moonshine ASR model
+        run: |
+          set -euo pipefail
+          mkdir -p build/tts-models build/asr
+          base=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+          curl -fsSL -o build/tts-models/kokoro-v1.0.int8.onnx "$base/kokoro-v1.0.int8.onnx"
+          curl -fsSL -o build/tts-models/voices-v1.0.bin "$base/voices-v1.0.bin"
+          curl -fsSL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2 | tar xj -C build/asr
+          echo "LEXICON_DIR=$(python -c 'import misaki, os; print(os.path.join(os.path.dirname(misaki.__file__), "data"))')" >> "$GITHUB_ENV"
+      - name: Synthesise with the app's G2P + C++ engine, transcribe, gate on WER
+        run: |
+          npx tsc -p tools/tts/tsconfig.json
+          python tools/tts/ci_tts.py --cli build/rvc/mobigpt-rvc --model build/tts-models/kokoro-v1.0.int8.onnx \
+            --voices build/tts-models/voices-v1.0.bin --lexicon-dir "$LEXICON_DIR" --asr-dir build/asr --out build/tts-e2e
+      - if: always()
+        run: cat build/tts-e2e/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tts-real-model
+          path: |
+            build/tts-e2e/*.wav
+            build/tts-e2e/*.json
+            build/tts-e2e/report.md
+
   catalog:
     name: Catalog · Hugging Face files resolve
     runs-on: ubuntu-latest

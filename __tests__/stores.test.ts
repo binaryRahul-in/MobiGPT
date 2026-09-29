@@ -368,3 +368,90 @@ describe('DownloadManager', () => {
     expect(dm.get('y')?.state).toBe('done');
   });
 });
+
+describe('TtsStore', () => {
+  const {TtsStore, ttsCatalog} = require('../src/stores/TtsStore');
+  const {ttsRequests} = require('../jest/mocks/voice');
+  const {toTokens} = require('../src/services/tts/g2p');
+  const lexicon = JSON.stringify(require('../jest/fixtures-lexicon.json'));
+
+  const make = () => {
+    const root = new RootStore({persist: false, probe: async () => profile()});
+    return new TtsStore(root.settings, undefined, false);
+  };
+
+  beforeEach(() => {
+    fs.__reset();
+    ttsRequests.length = 0;
+    fs.__setRemoteText('misaki_us_gold.json', lexicon);
+    fs.__setRemoteText('misaki_us_silver.json', '{}');
+  });
+
+  it('plans the model, dictionary and selected voice, then installs them in order', async () => {
+    const tts = make();
+    expect(tts.ready).toBe(false);
+    expect(tts.plan.map((p: {label: string}) => p.label)).toEqual([
+      'Speech model · Kokoro-82M v1.0',
+      'Pronunciation dictionary',
+      'Voice · Heart',
+    ]);
+    expect(tts.missingBytes).toBeGreaterThan(90e6);
+    await tts.install();
+    expect(tts.ready).toBe(true);
+    expect(tts.installing).toBeNull();
+    expect(tts.plan).toEqual([]);
+    expect(tts.modelPath).toBe('/docs/mobigpt/tts/model.onnx');
+  });
+
+  it('falls back to the next source when the mirror is missing', async () => {
+    const [mirror, upstream] = ttsCatalog.models[0].urls;
+    fs.__setRemote(mirror, 0, 404);
+    fs.__setRemote(upstream, 92361271);
+    const tts = make();
+    await tts.installModel();
+    expect(tts.modelPath).toBeTruthy();
+    expect(tts.downloads.get(ttsCatalog.models[0].id)?.url).toBe(upstream);
+  });
+
+  it('keeps the error on screen when every source fails', async () => {
+    const tts = make();
+    for (const u of ttsCatalog.models[0].urls) {
+      fs.__setRemote(u, 0, 404);
+    }
+    fs.__setRemote('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx', 0, 404);
+    await expect(tts.install()).rejects.toThrow(/404/);
+    expect(tts.installError).toMatch(/404/);
+    expect(tts.ready).toBe(false);
+  });
+
+  it('turns text into phoneme-token windows for the native engine', async () => {
+    const tts = make();
+    await tts.install();
+    tts.setSpeed(1.2);
+    const {path, result} = await tts.synthesize('Hello world, this voice was made on my phone.');
+    expect(path).toMatch(/\/voice\/recordings\/tts-\d+\.wav$/);
+    expect(result.sampleRate).toBe(24000);
+    expect(ttsRequests).toHaveLength(1);
+    const req = ttsRequests[0];
+    expect(req.windows).toEqual([toTokens('həlˈO wˈɜɹld, ðɪs vˈYs wʌz mˌAd ˌɔn mI fˈOn.')]);
+    expect(req.speed).toBe(1.2);
+    expect(req.voicePath).toBe('/docs/mobigpt/tts/voice_af_heart.bin');
+    expect(tts.lastUnknown).toEqual([]);
+    expect(tts.busy).toBe(false);
+  });
+
+  it('refuses to synthesise before installation or with empty text', async () => {
+    const tts = make();
+    await expect(tts.synthesize('Hello')).rejects.toThrow(/Install the neural voice/);
+    await tts.install();
+    await expect(tts.synthesize('   ')).rejects.toThrow(/Type something/);
+  });
+
+  it('switching voice only downloads that voice', async () => {
+    const tts = make();
+    await tts.install();
+    tts.setVoice('am_michael');
+    expect(tts.ready).toBe(false);
+    expect(tts.plan.map((p: {id: string}) => p.id)).toEqual(['tts-voice:am_michael']);
+  });
+});

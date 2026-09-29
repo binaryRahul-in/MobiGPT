@@ -1,5 +1,11 @@
 /** Fake voice engine implementing the JSI contract for unit/UI tests. */
-import type {EngineInfo, ModelInspection, VoiceEngineConfig, VoiceJsi} from '../../packages/react-native-mobigpt-voice/src/types';
+import type {
+  EngineInfo,
+  ModelInspection,
+  TtsRequest,
+  VoiceEngineConfig,
+  VoiceJsi,
+} from '../../packages/react-native-mobigpt-voice/src/types';
 
 export * from '../../packages/react-native-mobigpt-voice/src/types';
 
@@ -60,7 +66,17 @@ export const fakeEngine: VoiceJsi = {
   cancel: jest.fn(),
   startLive: jest.fn(async () => undefined),
   stopLive: jest.fn(async () => undefined),
-  liveStats: () => ({running: true, latencyMs: 2900, lastChunkMs: 400, realtimeFactor: 0.16, chunks: 3, droppedBlocks: 0, inputLevel: 0.2, outputLevel: 0.3, error: ''}),
+  liveStats: () => ({
+    running: true,
+    latencyMs: 2900,
+    lastChunkMs: 400,
+    realtimeFactor: 0.16,
+    chunks: 3,
+    droppedBlocks: 0,
+    inputLevel: 0.2,
+    outputLevel: 0.3,
+    error: '',
+  }),
   startRecording: jest.fn(async () => undefined),
   stopRecording: jest.fn(async () => {
     fs.__putFile('/docs/mobigpt/voice/recordings/rec.wav', 32000);
@@ -79,7 +95,31 @@ export const fakeEngine: VoiceJsi = {
     stages: {encoderMs: 400, pitchMs: 300, synthMs: 800, totalMs: 1500},
     providers: ['synth:xnnpack'],
   })),
+  ttsLoad: jest.fn(async () => {
+    ttsLoaded = true;
+    return {provider: 'xnnpack', warnings: []};
+  }),
+  ttsUnload: jest.fn(async () => {
+    ttsLoaded = false;
+  }),
+  ttsIsLoaded: () => ttsLoaded,
+  ttsSynthesize: jest.fn(async (req: TtsRequest) => {
+    ttsRequests.push(req);
+    const samples = req.windows.reduce((a, w) => a + (w.length + 2) * 600, 0);
+    fs.__putFile(req.outputPath, samples * 2 + 44);
+    return {
+      path: req.outputPath,
+      seconds: samples / 24000,
+      sampleRate: 24000,
+      inferMs: 120,
+      realtimeFactor: 0.4,
+      windows: req.windows.length,
+    };
+  }),
 };
+
+let ttsLoaded = false;
+export const ttsRequests: TtsRequest[] = [];
 
 export const isVoiceModuleAvailable = () => true;
 export const getVoiceEngine = jest.fn(async () => fakeEngine);

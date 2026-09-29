@@ -18,5 +18,6 @@ set(MOBIGPT_RVC_SOURCES
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Models.cpp
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Pipeline.cpp
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/VoiceService.cpp
+  ${MOBIGPT_VOICE_ROOT}/cpp/tts/Kokoro.cpp
   ${MOBIGPT_WORLD_SOURCES}
 )

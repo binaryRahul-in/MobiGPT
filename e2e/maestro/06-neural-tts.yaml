@@ -1,0 +1,53 @@
+appId: ai.mobigpt.app
+name: 06-neural-tts
+tags:
+  - network
+---
+# Enables text-to-speech, installs Kokoro-82M (model + dictionary + one voice)
+# over the network and speaks a sentence with the on-device neural engine. After
+# flow 05 an RVC voice is installed, so the speech is also converted into it.
+- launchApp
+- tapOn:
+    id: "open-settings"
+- tapOn:
+    id: "open-features"
+- scrollUntilVisible:
+    element:
+      id: "feature-toggle-ttsVoice"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "feature-toggle-ttsVoice"
+- runFlow:
+    when:
+      visible:
+        id: "feature-confirm"
+    commands:
+      - tapOn:
+          id: "feature-confirm"
+- back
+- back
+- tapOn:
+    id: "tab-voice"
+- tapOn: "Text"
+- extendedWaitUntil:
+    visible:
+      id: "tts-panel"
+    timeout: 20000
+- tapOn:
+    id: "tts-install"
+- takeScreenshot: 06-installing
+- extendedWaitUntil:
+    notVisible:
+      id: "tts-install-progress"
+    timeout: 600000
+- assertNotVisible:
+    id: "tts-install-error"
+- tapOn:
+    id: "tts-speak"
+- extendedWaitUntil:
+    visible:
+      id: "tts-result"
+    timeout: 300000
+- assertVisible: ".*RTF.*"
+- takeScreenshot: 06-spoken
