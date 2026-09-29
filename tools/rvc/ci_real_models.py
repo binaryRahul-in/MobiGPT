@@ -71,6 +71,8 @@ def main() -> int:
 
     enc_q8 = hf_file(BASE_REPO, "contentvec_768l12_q8.onnx", models)
     rmvpe = hf_file(BASE_REPO, "rmvpe_q8.onnx", models)
+    # The FCPE pack phones with 4-6 GB RAM get by default (catalog: niobures/FCPE).
+    fcpe = hf_file("niobures/FCPE", "onnx/fcpe.onnx", models)
     voice = first_voice(VOICE_REPO, models)
 
     speech = os.path.join(args.out, "speech.wav")
@@ -82,7 +84,7 @@ def main() -> int:
     in_dur = len(x) / sr
     in_f0 = f0_median(speech)
 
-    info = {m: run(args.cli, ["inspect", m]) for m in (enc_q8, rmvpe, voice)}
+    info = {m: run(args.cli, ["inspect", m]) for m in (enc_q8, rmvpe, fcpe, voice)}
     results = []
     cases = [
         ("rmvpe", ["--pitch", "rmvpe", "--pitch-model", rmvpe]),
@@ -92,6 +94,8 @@ def main() -> int:
         ("rmvpe+12", ["--pitch", "rmvpe", "--pitch-model", rmvpe, "--key", "12"]),
         ("dio-sequential", ["--pitch", "dio", "--sequential"]),
         ("dio-chunk2", ["--pitch", "dio", "--chunk", "2.0"]),
+        ("fcpe", ["--pitch", "fcpe", "--pitch-model", fcpe]),
+        ("fcpe-sequential", ["--pitch", "fcpe", "--pitch-model", fcpe, "--sequential"]),
     ]
     # The same voice with FP16 weight storage (quantize_rvc.py --kind synth): half the download.
     voices = {name: voice for name, _ in cases}

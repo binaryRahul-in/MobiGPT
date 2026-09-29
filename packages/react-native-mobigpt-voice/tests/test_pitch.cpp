@@ -103,6 +103,21 @@ TEST(neural_extractors_run_on_all_layouts) {
   }
 }
 
+// Found on Android: niobures/FCPE takes (mel, threshold) and the mel path never fed the
+// threshold ("Missing Input: threshold"), so every conversion with FCPE failed.
+TEST(mel_models_with_a_threshold_input_receive_it) {
+  SKIP_UNLESS_FIXTURE("fcpe_threshold.onnx");
+  auto x = voice(200, 1.0);
+  const size_t frames = x.size() / 160;
+  for (auto [m, file] : {std::make_pair(PitchMethod::Fcpe, "fcpe_threshold.onnx"),
+                         std::make_pair(PitchMethod::Rmvpe, "rmvpe_mel_threshold.onnx")}) {
+    auto ex = createPitchExtractor(m, mt::fixture(file), SessionConfig{}, PitchOptions{});
+    auto f0 = ex->extract(x.data(), x.size(), frames);
+    REQUIRE(f0.size() == frames);
+    REQUIRE_NEAR(medianVoiced(f0), 220.0, 0.01);
+  }
+}
+
 TEST(missing_model_is_an_error) {
   REQUIRE_THROWS(createPitchExtractor(PitchMethod::Rmvpe, "", SessionConfig{}, PitchOptions{}));
   REQUIRE_THROWS(createPitchExtractor(PitchMethod::Fcpe, "/nonexistent.onnx", SessionConfig{}, PitchOptions{}));

@@ -115,8 +115,14 @@ class RmvpeExtractor final : public PitchExtractor {
       std::vector<Ort::Value> ins;
       ins.push_back(borrowTensor(in.data(), in.size(), shape));
       const std::string inName = model_.inputs().at(0).name;
+      std::vector<const char*> names{inName.c_str()};
+      float thrv = thr;
+      if (model_.hasInput("threshold")) {
+        ins.push_back(borrowTensor(&thrv, 1, {1}));
+        names.push_back("threshold");
+      }
       const char* outName = model_.outputs().at(0).name.c_str();
-      auto outs = model_.run({inName.c_str()}, ins, {outName});
+      auto outs = model_.run(names, ins, {outName});
       std::vector<int64_t> oshape;
       std::vector<float> out = toFloatVector(outs[0], &oshape);
       if (!oshape.empty() && oshape.back() == 360) {
@@ -178,6 +184,12 @@ class FcpeExtractor final : public PitchExtractor {
       std::vector<int64_t> shape = channelsFirst_ ? std::vector<int64_t>{1, 128, t} : std::vector<int64_t>{1, t, 128};
       ins.push_back(borrowTensor(buf.data(), buf.size(), shape));
       names.push_back(inName.c_str());
+      // Exports that decode inside the graph (e.g. niobures/FCPE) take the voicing
+      // threshold as a second input and return Hz.
+      if (model_.hasInput("threshold")) {
+        ins.push_back(borrowTensor(&thrv, 1, {1}));
+        names.push_back("threshold");
+      }
     }
     const char* outName = model_.outputs().at(0).name.c_str();
     auto outs = model_.run(names, ins, {outName});

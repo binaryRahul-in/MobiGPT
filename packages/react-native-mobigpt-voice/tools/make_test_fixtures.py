@@ -144,6 +144,30 @@ def fcpe(path):
     save(helper.make_model(g), path)
 
 
+def mel_threshold(path, layout="fcpe"):
+    """Pitch models that decode inside the graph and take the voicing threshold as a
+    second input (niobures/FCPE): mel + threshold -> Hz. Voiced (220 Hz) iff
+    threshold <= 0.5, so a missing or wrong threshold input is detected."""
+    mel_shape = [1, "T", 128] if layout == "fcpe" else [1, 128, "T"]
+    reduce_axis = 2 if layout == "fcpe" else 1
+    g = helper.make_graph(
+        [
+            helper.make_node("ReduceMean", ["mel"], ["m"], keepdims=0, axes=[reduce_axis]),  # [1,T]
+            helper.make_node("Mul", ["m", "zero"], ["z"]),
+            helper.make_node("Add", ["z", "hz"], ["voiced"]),
+            helper.make_node("LessOrEqual", ["threshold", "half"], ["ok"]),
+            helper.make_node("Where", ["ok", "voiced", "z"], ["f0"]),
+        ],
+        "mel_threshold",
+        [helper.make_tensor_value_info("mel", TensorProto.FLOAT, mel_shape),
+         helper.make_tensor_value_info("threshold", TensorProto.FLOAT, [1])],
+        [helper.make_tensor_value_info("f0", TensorProto.FLOAT, [1, "T"])],
+        [const("zero", np.array(0, dtype=np.float32)), const("hz", np.array(220, dtype=np.float32)),
+         const("half", np.array([0.5], dtype=np.float32))],
+    )
+    save(helper.make_model(g), path)
+
+
 # ------------------------------------------------------------ synthesisers
 
 def synth(path, layout, sr, fp16=False, with_f0=True, channels=768, meta=None):
@@ -294,6 +318,8 @@ def main():
     rmvpe_mel(os.path.join(out, "rmvpe_mel.onnx"))
     rmvpe_wave(os.path.join(out, "rmvpe_wave.onnx"))
     fcpe(os.path.join(out, "fcpe.onnx"))
+    mel_threshold(os.path.join(out, "fcpe_threshold.onnx"))
+    mel_threshold(os.path.join(out, "rmvpe_mel_threshold.onnx"), layout="rmvpe")
     synth(os.path.join(out, "synth_webui_40k.onnx"), "webui", 40000)
     synth(
         os.path.join(out, "synth_wokada_48k_fp16.onnx"),
