@@ -5,6 +5,7 @@ flows:
   - "02-*"
   - "03-*"
   - "04-*"
+  - "05-*"
 executionOrder:
   continueOnFailure: true
   flowsOrder:
@@ -12,3 +13,4 @@ executionOrder:
     - 02-navigation
     - 03-features-voice
     - 04-llm-chat
+    - 05-voice-engine

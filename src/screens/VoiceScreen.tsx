@@ -2,16 +2,28 @@ import Slider from '@react-native-community/slider';
 import {observer} from 'mobx-react-lite';
 import React, {useState} from 'react';
 import {Alert, ScrollView, StyleSheet, View} from 'react-native';
-import {Button, Chip, IconButton, List, ProgressBar, SegmentedButtons, Snackbar, Text, TextInput, useTheme} from 'react-native-paper';
+import {
+  ActivityIndicator,
+  Button,
+  Chip,
+  IconButton,
+  List,
+  ProgressBar,
+  SegmentedButtons,
+  Snackbar,
+  Text,
+  TextInput,
+  useTheme,
+} from 'react-native-paper';
 
-import {EmptyState, IssueList, LevelMeter, Screen, Section, StatTile, StatusChip, TileRow} from '../components/ui';
+import {DownloadProgress, EmptyState, IssueList, LevelMeter, Screen, Section, StatTile, StatusChip, TileRow} from '../components/ui';
 import {TabScreenProps} from '../navigation/types';
 import {pickAndImport} from '../services/importFile';
 import {ensureDirs, Paths} from '../services/paths';
 import {useStores} from '../stores/RootStore';
 import {voicesCatalog} from '../stores/VoiceStore';
 import {spacing} from '../theme';
-import {formatDuration} from '../utils/format';
+import {formatBytes, formatDuration} from '../utils/format';
 
 type Mode = 'record' | 'file' | 'text' | 'live';
 
@@ -369,27 +381,79 @@ const QuickInstall = observer(function QuickInstall({onMessage}: {onMessage: (m:
         voicesCatalog.pitch.find(p => p.method === method)
       : undefined;
   const firstVoice = voicesCatalog.voices[0];
-  const busy = [enc.id, pitch?.id, firstVoice?.id].some(id => id && voice.downloads.isActive(id));
+  const theme = useTheme();
+  const [step, setStep] = useState<{index: number; total: number; id: string; label: string} | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Everything still missing, in install order, so the user sees the whole plan and its size up front.
+  const plan = [
+    !voice.encoderAsset
+      ? {id: enc.id, label: `Speech encoder · ${enc.name}`, bytes: enc.sizeBytes, run: () => voice.installAsset(enc, 'encoder')}
+      : null,
+    pitch && (method === 'rmvpe' || method === 'fcpe') && !voice.pitchAsset(method)
+      ? {id: pitch.id, label: `Pitch tracker · ${pitch.name}`, bytes: pitch.sizeBytes, run: () => voice.installAsset(pitch, 'pitch')}
+      : null,
+    !voice.selectedVoice && firstVoice
+      ? {
+          id: firstVoice.id,
+          label: `Voice · ${firstVoice.name}`,
+          bytes: firstVoice.sizeBytes ?? 0,
+          run: () => voice.installPresetVoice(firstVoice),
+        }
+      : null,
+  ].filter(<T,>(x: T | null): x is T => x != null);
+  const totalBytes = plan.reduce((a, p) => a + (p.bytes ?? 0), 0);
+  const task = step ? voice.downloads.get(step.id) : undefined;
+
   const install = async () => {
+    setError(null);
+    const steps = [...plan];
     try {
-      if (!voice.encoderAsset) {
-        await voice.installAsset(enc, 'encoder');
+      for (let i = 0; i < steps.length; i++) {
+        setStep({index: i + 1, total: steps.length, id: steps[i].id, label: steps[i].label});
+        await steps[i].run();
       }
-      if (pitch && (method === 'rmvpe' || method === 'fcpe') && !voice.pitchAsset(method)) {
-        await voice.installAsset(pitch, 'pitch');
-      }
-      if (!voice.selectedVoice && firstVoice) {
-        await voice.installPresetVoice(firstVoice);
-      }
+      setStep(null);
       onMessage('Voice Studio is ready');
     } catch (e: any) {
-      onMessage(e?.message ?? String(e));
+      setStep(null);
+      setError(e?.message ?? String(e));
     }
   };
+
+  if (step) {
+    return (
+      <View style={styles.installBox} testID="voice-install-progress">
+        <Text variant="labelLarge">
+          Step {step.index} of {step.total} · {step.label}
+        </Text>
+        {task && task.state === 'downloading' ? (
+          <DownloadProgress
+            bytes={task.bytes}
+            total={task.total}
+            speedBps={task.speedBps}
+            onCancel={() => voice.downloads.cancel(step.id)}
+          />
+        ) : (
+          <View style={styles.row}>
+            <ActivityIndicator size="small" />
+            <Text variant="bodySmall">{task?.state === 'done' ? 'Verifying…' : 'Connecting…'}</Text>
+          </View>
+        )}
+      </View>
+    );
+  }
   return (
-    <Button mode="contained" icon="download" loading={busy} disabled={busy} onPress={install} testID="voice-quick-install">
-      Install recommended packs
-    </Button>
+    <View style={styles.installBox}>
+      {error ? (
+        <Text variant="bodySmall" style={{color: theme.colors.error}} testID="voice-install-error">
+          {error}
+        </Text>
+      ) : null}
+      <Button mode="contained" icon={error ? 'refresh' : 'download'} onPress={install} testID="voice-quick-install">
+        {error ? 'Retry' : `Install recommended packs${totalBytes > 0 ? ` (${formatBytes(totalBytes)})` : ''}`}
+      </Button>
+    </View>
   );
 });
 
@@ -400,4 +464,5 @@ const styles = StyleSheet.create({
   chipsWrap: {flexDirection: 'row', flexWrap: 'wrap', gap: 6},
   row: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap'},
   textInput: {minHeight: 96},
+  installBox: {gap: spacing.sm},
 });

@@ -15,6 +15,9 @@ export interface DownloadTask {
   error?: string;
 }
 
+/** A download that receives no bytes for this long is aborted instead of hanging forever. */
+export const STALL_TIMEOUT_MS = 45_000;
+
 /**
  * Downloads to `<dest>.part` and renames on success, so a half-written file
  * is never mistaken for a model. Progress is observable (mobx).
@@ -52,15 +55,21 @@ export class DownloadManager {
     }
     let lastT = Date.now();
     let lastB = 0;
+    let lastActivity = Date.now();
+    let stalled = false;
     const {jobId, promise} = FS.downloadFile({
       fromUrl: url,
       toFile: part,
       headers: {'User-Agent': 'MobiGPT/1.0 (+https://github.com/binaryRahul-in/MobiGPT)', ...this.headers()},
+      connectionTimeout: 20_000,
+      readTimeout: 30_000,
       progressInterval: 500,
       background: true,
       discretionary: false,
       begin: res =>
         runInAction(() => {
+          lastActivity = Date.now();
+          console.log(`[download] ${label}: HTTP ${res.statusCode}, ${res.contentLength} bytes from ${url}`);
           const t = this.tasks.get(id);
           if (t) {
             t.state = 'downloading';
@@ -74,6 +83,9 @@ export class DownloadManager {
             return;
           }
           const now = Date.now();
+          if (res.bytesWritten > lastB) {
+            lastActivity = now;
+          }
           if (now - lastT >= 500) {
             t.speedBps = ((res.bytesWritten - lastB) * 1000) / (now - lastT);
             lastT = now;
@@ -86,8 +98,17 @@ export class DownloadManager {
         }),
     });
     this.jobs.set(id, jobId);
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > STALL_TIMEOUT_MS) {
+        stalled = true;
+        FS.stopDownload(jobId);
+      }
+    }, 5_000);
     try {
       const res = await promise;
+      if (stalled) {
+        throw new Error('stalled');
+      }
       if (this.tasks.get(id)?.state === 'cancelled') {
         throw new Error('cancelled');
       }
@@ -114,9 +135,14 @@ export class DownloadManager {
           t.total = stat.size;
         }
       });
+      console.log(`[download] ${label}: done, ${stat.size} bytes`);
       return dest;
-    } catch (e: any) {
-      const cancelled = this.tasks.get(id)?.state === 'cancelled';
+    } catch (err: any) {
+      const cancelled = !stalled && this.tasks.get(id)?.state === 'cancelled';
+      const e = stalled
+        ? new Error(`${label}: no data received for ${STALL_TIMEOUT_MS / 1000} s. Check your connection and try again.`)
+        : err;
+      console.warn(`[download] ${label} failed: ${e?.message ?? e} (${url})`);
       runInAction(() => {
         const t = this.tasks.get(id);
         if (t && !cancelled) {
@@ -129,6 +155,7 @@ export class DownloadManager {
         .catch(() => undefined);
       throw cancelled ? new Error('Download cancelled') : e;
     } finally {
+      clearInterval(watchdog);
       this.jobs.delete(id);
     }
   }

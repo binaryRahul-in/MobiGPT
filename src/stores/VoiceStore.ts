@@ -51,6 +51,8 @@ export interface VoicePreset {
   sampleRate?: number;
   version?: string;
   license?: string;
+  /** Approximate, for display; the real size comes from the Hub listing. */
+  sizeBytes?: number;
 }
 
 export interface InstalledAsset {

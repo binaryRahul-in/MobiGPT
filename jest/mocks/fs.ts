@@ -9,12 +9,14 @@ const remotes = new Map<string, {size: number; status: number}>();
 const nameSizes = new Map<string, number>();
 let nextJob = 1;
 const cancelled = new Set<number>();
+const stalls = new Set<string>();
 
 export function __reset() {
   files.clear();
   remotes.clear();
   nameSizes.clear();
   cancelled.clear();
+  stalls.clear();
   dirs.clear();
   ['/docs', '/caches', '/tmp'].forEach(d => dirs.add(d));
 }
@@ -27,6 +29,10 @@ export function __setRemoteName(name: string, size: number) {
 }
 export function __setRemote(url: string, size: number, status = 200) {
   remotes.set(url, {size, status});
+}
+/** The connection opens, then no bytes ever arrive (until the job is stopped). */
+export function __setStalled(url: string) {
+  stalls.add(url);
 }
 export function __files() {
   return new Map(files);
@@ -76,6 +82,9 @@ export function downloadFile(opts: {
   const promise = (async () => {
     await Promise.resolve();
     opts.begin?.({contentLength: remote.size, jobId, statusCode: remote.status, headers: {}});
+    while (stalls.has(opts.fromUrl) && !cancelled.has(jobId)) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
     for (let i = 1; i <= 4; i++) {
       await new Promise(r => setTimeout(r, 1));
       if (cancelled.has(jobId)) {

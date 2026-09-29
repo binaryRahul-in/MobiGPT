@@ -152,7 +152,8 @@ jobs:
           disable-animations: true
           script: |
             adb install -r apk/app-release.apk
-            maestro test e2e/maestro --format junit --output maestro-report.xml --test-output-dir maestro-output
+            mkdir -p maestro-output && adb logcat -c
+            maestro test e2e/maestro --format junit --output maestro-report.xml --test-output-dir maestro-output; s=$?; adb logcat -d > maestro-output/logcat.txt; grep -E "ReactNativeJS|MobiGPTVoice|AndroidRuntime|onnxruntime|RNLlama" maestro-output/logcat.txt | tail -300; exit $s
       - uses: actions/upload-artifact@v4
         if: always()
         with:

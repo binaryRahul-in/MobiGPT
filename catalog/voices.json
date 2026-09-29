@@ -99,7 +99,8 @@
       "file": "woman_1.onnx",
       "sampleRate": 40000,
       "version": "v2",
-      "license": "See model card"
+      "license": "See model card",
+      "sizeBytes": 111000000
     }
   ],
   "search": {

@@ -337,3 +337,34 @@ describe('VoiceStore', () => {
     expect(s.bench.best.rtf).toBe(0.25);
   });
 });
+
+describe('DownloadManager', () => {
+  const {DownloadManager, STALL_TIMEOUT_MS} = require('../src/services/downloads');
+
+  beforeEach(() => fs.__reset());
+  afterEach(() => jest.useRealTimers());
+
+  it('aborts a download that stops receiving data instead of hanging', async () => {
+    jest.useFakeTimers();
+    const url = 'https://example.com/stalled.onnx';
+    fs.__setStalled(url);
+    const dm = new DownloadManager();
+    const p = dm.start('x', url, '/docs/m/stalled.onnx', 'Speech encoder', 0);
+    const settled = p.then(
+      () => 'resolved',
+      (e: Error) => e.message,
+    );
+    await jest.advanceTimersByTimeAsync(STALL_TIMEOUT_MS + 10_000);
+    expect(await settled).toMatch(/Speech encoder: no data received for 45 s/);
+    expect(dm.get('x')?.state).toBe('error');
+    expect(dm.isActive('x')).toBe(false);
+    expect(fs.__files().has('/docs/m/stalled.onnx.part')).toBe(false);
+  });
+
+  it('keeps a slow but progressing download alive', async () => {
+    const dm = new DownloadManager();
+    fs.__setRemote('https://example.com/ok.onnx', 5000);
+    await expect(dm.start('y', 'https://example.com/ok.onnx', '/docs/m/ok.onnx', 'ok', 5000)).resolves.toBe('/docs/m/ok.onnx');
+    expect(dm.get('y')?.state).toBe('done');
+  });
+});

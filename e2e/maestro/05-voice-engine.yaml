@@ -1,0 +1,47 @@
+appId: ai.mobigpt.app
+name: 05-voice-engine
+tags:
+  - network
+---
+# Installs the recommended Voice Studio packs over the network (INT8 ContentVec
+# from the MobiGPT release mirror + a community RVC voice from Hugging Face), then
+# runs a real on-device conversion through Benchmarks → Voice.
+- launchApp
+- tapOn:
+    id: "tab-voice"
+- extendedWaitUntil:
+    visible:
+      id: "voice-screen"
+    timeout: 30000
+- tapOn:
+    id: "voice-quick-install"
+- takeScreenshot: 05-installing
+# Finished when the "Almost ready" section disappears; a failure shows the error instead.
+- extendedWaitUntil:
+    notVisible:
+      id: "voice-missing"
+    timeout: 900000
+- assertNotVisible:
+    id: "voice-install-error"
+- takeScreenshot: 05-installed
+- tapOn:
+    id: "tab-device"
+- scrollUntilVisible:
+    element:
+      id: "open-benchmarks"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "open-benchmarks"
+- scrollUntilVisible:
+    element:
+      id: "bench-voice"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "bench-voice"
+# The result row reads "RTF 1.23x · enc … / f0 … / synth … ms".
+- extendedWaitUntil:
+    visible: "RTF .*x.*"
+    timeout: 600000
+- takeScreenshot: 05-voice-benchmark
