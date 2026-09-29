@@ -347,7 +347,6 @@ ConversionStats RvcEngine::convertSequential(const float* audio, size_t count, c
   // will request; each stage then only needs its own model in RAM.
   std::vector<std::vector<uint16_t>> featStore;  // fp16 to halve memory
   std::vector<std::vector<float>> f0Store;
-  std::vector<std::vector<float>> windows;  // kept only for DSP-free stages
   auto forEachWindow = [&](const std::function<void(const float*, size_t)>& fn) {
     StreamingConverter dry(plan, 1, [&](const float* w, size_t n) {
       fn(w, n);
@@ -425,9 +424,8 @@ ConversionStats RvcEngine::convertFile(const std::string& inWav, const std::stri
   in.samples.clear();
   in.samples.shrink_to_fit();
   WavStreamWriter w;
-  // In sequential mode the true rate is only known after the synth opens;
-  // write through a small buffer so the header is correct either way.
-  std::vector<float> pending;
+  // Opened lazily: in sequential mode the true rate is known only once the
+  // synthesiser has been (re)opened.
   bool opened = false;
   auto emit = [&](const float* y, size_t n) {
     if (!opened) {

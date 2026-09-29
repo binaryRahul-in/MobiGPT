@@ -63,7 +63,7 @@
       "name": "FCPE (fast context pitch estimator)",
       "repo": "niobures/FCPE",
       "file": "onnx/fcpe.onnx",
-      "sizeBytes": 42000000,
+      "sizeBytes": 43300000,
       "precision": "fp32",
       "license": "MIT"
     }

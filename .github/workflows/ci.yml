@@ -54,7 +54,7 @@ jobs:
             ort: onnxruntime-linux-x64
             sanitize: '1'
           - os: macos-15
-            ort: onnxruntime-osx-universal2
+            ort: onnxruntime-osx-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -63,6 +63,7 @@ jobs:
       - run: pip install numpy onnx librosa
       - name: Download ONNX Runtime ${{ env.ORT_VERSION }}
         run: |
+          set -o pipefail
           mkdir -p build/native
           curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${{ matrix.ort }}-${ORT_VERSION}.tgz" | tar xz -C build/native
           echo "ORT_ROOT=$PWD/build/native/${{ matrix.ort }}-${ORT_VERSION}" >> "$GITHUB_ENV"
@@ -93,6 +94,7 @@ jobs:
       - run: pip install numpy onnx onnxruntime==${ORT_VERSION} librosa soundfile huggingface_hub
       - name: Build engine CLI
         run: |
+          set -o pipefail
           mkdir -p build/native
           curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" | tar xz -C build/native
           ORT_ROOT=$PWD/build/native/onnxruntime-linux-x64-${ORT_VERSION}

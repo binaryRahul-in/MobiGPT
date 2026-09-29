@@ -158,14 +158,10 @@ Synthesizer::Synthesizer(const std::string& path, const SessionConfig& cfg, int 
   std::vector<float> f(static_cast<size_t>(warmFrames) * info_.channels, 0.0f);
   std::vector<float> pf(static_cast<size_t>(warmFrames), 0.0f);
   std::vector<int64_t> p(static_cast<size_t>(warmFrames), 1);
-  const int savedSr = info_.sampleRate;
-  info_.sampleRate = 100;  // so hop() does not divide by zero during warm-up
   std::vector<float> y = synthesize(f, warmFrames, info_.channels, p, pf, 0);
   const int measuredHop = static_cast<int>(y.size() / warmFrames);
-  info_.sampleRate = savedSr;
   if (measuredHop > 0 && measuredHop * warmFrames == static_cast<int>(y.size())) {
-    const int measuredSr = measuredHop * 100;
-    if (info_.sampleRate != measuredSr) info_.sampleRate = measuredSr;
+    info_.sampleRate = measuredHop * 100;  // the graph is the source of truth
   }
   if (info_.sampleRate <= 0) info_.sampleRate = defaultSampleRate;
 }

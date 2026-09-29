@@ -13,7 +13,8 @@ if [[ -z "${ORT_ROOT:-}" ]]; then
   case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) pkg="onnxruntime-linux-x64-$ORT_VERSION" ;;
     Linux-aarch64) pkg="onnxruntime-linux-aarch64-$ORT_VERSION" ;;
-    Darwin-*) pkg="onnxruntime-osx-universal2-$ORT_VERSION" ;;
+    Darwin-arm64) pkg="onnxruntime-osx-arm64-$ORT_VERSION" ;;
+    Darwin-x86_64) pkg="onnxruntime-osx-x86_64-$ORT_VERSION" ;;
     *) echo "unsupported host"; exit 1 ;;
   esac
   ORT_ROOT="$WORK/$pkg"

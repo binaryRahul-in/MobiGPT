@@ -120,10 +120,8 @@ std::string appendProvider(Ort::SessionOptions& so, Accelerator want, const Sess
       case Accelerator::CoreMl:
 #if defined(MOBIGPT_HAS_COREML)
       {
-        uint32_t flags = 0;
-#ifdef COREML_FLAG_CREATE_MLPROGRAM
-        flags |= COREML_FLAG_CREATE_MLPROGRAM;
-#endif
+        // ML Program format supports far more ops than the legacy NeuralNetwork format.
+        const uint32_t flags = COREML_FLAG_CREATE_MLPROGRAM;
         Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(so, flags));
         return "coreml";
       }

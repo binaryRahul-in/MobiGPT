@@ -3,6 +3,7 @@
 // buffer. Nothing is routed through JavaScript.
 #import <AVFoundation/AVFoundation.h>
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <string>
