@@ -117,6 +117,8 @@ def main() -> int:
 
         for src in sorted(glob.glob(os.path.join(fx, "*.onnx"))):
             name = os.path.basename(src)
+            if name.startswith("rvc_template_"):  # weight-free by design: its weights.bin is written on import
+                continue
             cases = [("fp16", 5e-2)]
             if name.startswith("synth_"):
                 cases.append(("fp16w", 5e-3))
