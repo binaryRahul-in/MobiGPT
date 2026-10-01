@@ -54,7 +54,21 @@ def main() -> int:
 
     voice, kind = extract_voice(args.input, args.out)
     lines = ["### Running the voice through MobiGPT's engine", ""]
+    device_voice = None
     if kind == "pth":
+        # The app's own path: native .zip/.pth import into a weight-free template, on the phone.
+        from make_voice_templates import export_template
+
+        rinfo = json.loads(run([args.cli, "rvc-info", args.input]).strip().splitlines()[-1])
+        tpl = os.path.join(args.out, rinfo["template"])
+        export_template(args.rvc_repo, rinfo["version"], rinfo["sampleRate"], tpl)
+        imported = os.path.join(args.out, "device-import")
+        os.makedirs(imported, exist_ok=True)
+        run([args.cli, "rvc-import", "--template", tpl, args.input, imported])
+        device_voice = os.path.join(imported, "model.onnx")
+        lines += [f"* On-device import (as the app does it): `{rinfo['pth']}` → {rinfo['template']} + "
+                  f"{os.path.getsize(os.path.join(imported, 'weights.bin')) / 1e6:.0f} MB weights"
+                  f"{' · bundled .index not needed' if rinfo['hasIndex'] else ''}"]
         onnx_path = os.path.join(args.out, "voice.onnx")
         out = run([sys.executable, os.path.join(HERE, "export_voice_onnx.py"), "--rvc-repo", args.rvc_repo, "--fp16", voice, onnx_path])
         lines += [f"* Converted `.pth` → ONNX: {out.strip().splitlines()[-1]}"]
@@ -80,11 +94,14 @@ def main() -> int:
     if enc:
         fcpe = hf_file("niobures/FCPE", "onnx/fcpe.onnx", models)
         lines += ["", "| pitch | RTF | out F0 / in F0 | RMS | result |", "|---|---|---|---|---|"]
-        for name, extra in [("dio", ["--pitch", "dio"]), ("fcpe", ["--pitch", "fcpe", "--pitch-model", fcpe]),
-                            ("fcpe +12", ["--pitch", "fcpe", "--pitch-model", fcpe, "--key", "12"])]:
-            out_wav = os.path.join(args.out, f"out-{name.replace(' ', '')}.wav")
+        cases = [("dio", voice, ["--pitch", "dio"]), ("fcpe", voice, ["--pitch", "fcpe", "--pitch-model", fcpe]),
+                 ("fcpe +12", voice, ["--pitch", "fcpe", "--pitch-model", fcpe, "--key", "12"])]
+        if device_voice:
+            cases.append(("fcpe · on-device import", device_voice, ["--pitch", "fcpe", "--pitch-model", fcpe]))
+        for name, model, extra in cases:
+            out_wav = os.path.join(args.out, f"out-{name.split(' ')[0]}{'-imported' if model == device_voice else ''}{'+12' if '+12' in name else ''}.wav")
             try:
-                st = json.loads(run([args.cli, "convert", "--encoder", enc, "--voice", voice, *extra, speech, out_wav]).strip().splitlines()[-1])
+                st = json.loads(run([args.cli, "convert", "--encoder", enc, "--voice", model, *extra, speech, out_wav]).strip().splitlines()[-1])
                 y, osr = sf.read(out_wav)
                 rms = float(np.sqrt(np.mean(y ** 2)))
                 ratio = f0_median(out_wav) / (in_f0 * (2 if "+12" in name else 1))

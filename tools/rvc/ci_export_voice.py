@@ -54,6 +54,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rvc-repo", required=True)
     ap.add_argument("--out", default="voice-export")
+    ap.add_argument("--cli", help="mobigpt-rvc binary: also check the on-device .zip/.pth importer")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -95,9 +96,46 @@ def main() -> int:
     # Weight rounding measures 0.1-0.4 dB depending on the SineGen noise draw; full FP16 compute is ~4.6 dB.
     if err > max(1.0, 3 * noise):
         failures.append(f"fp16 export error {err:.2f} dB")
+    if args.cli:
+        failures += check_device_import(args, pth, feed, out["fp16"])
     for f in failures:
         print("FAIL", f)
     return 1 if failures else 0
+
+
+def check_device_import(args, pth: str, feed: dict, reference: np.ndarray) -> list[str]:
+    """The app's native importer (template + .pth inside an RVC .zip) must reproduce the export."""
+    import zipfile
+
+    import onnxruntime as ort
+    import torch
+
+    sys.path.insert(0, HERE)
+    from make_voice_templates import export_template
+
+    # What RVC's "save small model" writes: FP16 weights without enc_q, plus config and tags.
+    ck = torch.load(pth, map_location="cpu", weights_only=False)
+    small = {"weight": {k: v.half() for k, v in ck["weight"].items() if "enc_q" not in k}, "config": ck["config"],
+             "info": "ci", "sr": "40k", "f0": 1, "version": "v2"}
+    small_pth = os.path.join(args.out, "Random Voice.pth")
+    torch.save(small, small_pth)
+    bundle = os.path.join(args.out, "Random Voice.zip")
+    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(small_pth, "Random Voice/Random Voice.pth")
+        z.writestr("Random Voice/added_IVF1_Flat_nprobe_1_Random_Voice_v2.index", b"\0" * 4096)
+    template = os.path.join(args.out, "rvc_template_v2_40k.onnx")
+    info = export_template(args.rvc_repo, "v2", 40000, template)
+    imported = os.path.join(args.out, "imported")
+    os.makedirs(imported, exist_ok=True)
+    res = subprocess.run([args.cli, "rvc-import", "--template", template, bundle, imported], capture_output=True, text=True)
+    if res.returncode != 0:
+        return [f"on-device import failed: {res.stderr.strip()}"]
+    print("on-device import:", res.stdout.strip(), f"(template {info['bytes'] / 1e6:.1f} MB)")
+    y = ort.InferenceSession(os.path.join(imported, "model.onnx")).run(None, feed)[0].ravel()
+    corr = float(np.corrcoef(reference, y)[0, 1])
+    err = audible_db_error(reference, y)
+    print(f"imported vs export --fp16: corr {corr:.5f}, audible-band error {err:.2f} dB")
+    return [] if corr > 0.999 and err < 1.0 else [f"imported voice differs from the export: corr {corr:.5f}, {err:.2f} dB"]
 
 
 if __name__ == "__main__":

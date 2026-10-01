@@ -9,7 +9,7 @@ on:
       only:
         description: 'Which assets to (re)publish'
         type: choice
-        options: [all, contentvec, tts]
+        options: [all, contentvec, tts, templates]
         default: all
 
 permissions:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   contentvec-int8:
-    if: inputs.only != 'tts'
+    if: inputs.only == 'all' || inputs.only == 'contentvec'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -65,7 +65,7 @@ jobs:
   # seven English voices as raw N x 256 float32 styles, and misaki's US lexicons
   # (hexgrad/misaki 0.9.4, Apache-2.0) used by the app's G2P.
   kokoro-tts:
-    if: inputs.only != 'contentvec'
+    if: inputs.only == 'all' || inputs.only == 'tts'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -106,3 +106,31 @@ jobs:
             out/kokoro_voice_*.bin
             out/misaki_us_gold.json
             out/misaki_us_silver.json
+
+  # Weight-free RVC graph templates (v1/v2 x 32/40/48 kHz) that let the app import
+  # .pth / .zip voices on the phone: tools/rvc/make_voice_templates.py.
+  voice-templates:
+    if: inputs.only == 'all' || inputs.only == 'templates'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy onnx torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+      - name: Build templates with the real RVC model code
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI rvc-src
+          git -C rvc-src checkout -q 7ef1986
+          python tools/rvc/make_voice_templates.py --rvc-repo rvc-src --out out
+          ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models-v1
+          name: MobiGPT voice models v1
+          prerelease: true
+          files: |
+            out/rvc_template_*.onnx
+            out/templates.json

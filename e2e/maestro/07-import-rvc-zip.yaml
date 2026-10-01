@@ -1,0 +1,54 @@
+appId: ai.mobigpt.app
+name: 07-import-rvc-zip
+tags:
+  - network
+---
+# Imports a community RVC voice exactly as it is shared on Hugging Face - a .zip with
+# the .pth checkpoint and a FAISS .index - by pasting its link. The .pth is converted
+# on the device (weight-free template + weights.bin), then used for a real conversion.
+- launchApp
+- tapOn:
+    id: "tab-voice"
+- tapOn:
+    id: "voice-library"
+- extendedWaitUntil:
+    visible:
+      id: "voice-url"
+    timeout: 20000
+- tapOn:
+    id: "voice-url"
+- inputText: "https://huggingface.co/AIMan2001/PeterGriffin/resolve/main/Peter%20Griffin.zip"
+- hideKeyboard
+- tapOn:
+    id: "voice-url-add"
+- takeScreenshot: 07-importing
+- extendedWaitUntil:
+    notVisible:
+      id: "voice-import-progress"
+    timeout: 900000
+- extendedWaitUntil:
+    visible: "Peter Griffin"
+    timeout: 20000
+- assertVisible: ".*PeterGriffin.pth · RVC v2 · 48 kHz.*"
+- takeScreenshot: 07-imported
+- back
+- tapOn:
+    id: "tab-device"
+- scrollUntilVisible:
+    element:
+      id: "open-benchmarks"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "open-benchmarks"
+- scrollUntilVisible:
+    element:
+      id: "bench-voice"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "bench-voice"
+- extendedWaitUntil:
+    visible: "Voice · Peter Griffin"
+    timeout: 600000
+- takeScreenshot: 07-benchmark

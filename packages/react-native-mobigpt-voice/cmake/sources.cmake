@@ -12,6 +12,7 @@ set(MOBIGPT_WORLD_SOURCES
 
 set(MOBIGPT_RVC_SOURCES
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Audio.cpp
+  ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Checkpoint.cpp
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Dsp.cpp
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/OrtSession.cpp
   ${MOBIGPT_VOICE_ROOT}/cpp/rvc/Pitch.cpp

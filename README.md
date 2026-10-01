@@ -25,7 +25,7 @@ Android (arm64 · x86_64) and iOS. No account, no cloud, no telemetry.</p>
 | **CPU · GPU · NPU** | CPU everywhere, OpenCL on Adreno, Metal on Apple silicon, and experimental Hexagon NPU offload. |
 | **Model hub** | Curated catalogue (updated remotely), Hugging Face search with per-file fit badges, import `.gguf` from storage, download/pause/delete, load/unload. |
 | **Benchmarks** | llama-bench style prompt/generation throughput, plus the voice engine's real-time factor. Results are kept as history. |
-| **Voice Studio (v2)** | Retrieval-based Voice Conversion on ONNX Runtime. Record, convert files (mp3/m4a/wav…), type text, or run a live mic→speaker voice changer. |
+| **Voice Studio (v2)** | Retrieval-based Voice Conversion on ONNX Runtime. Record, convert files (mp3/m4a/wav…), type text, or run a live mic→speaker voice changer. Add voices as they are shared (RVC `.zip`/`.pth`, or `.onnx`) from a file or a link; `.pth` checkpoints are converted on the phone. |
 | **Neural text-to-speech** | [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (INT8, 7 English voices) running on-device in the same C++ engine, with a TypeScript port of misaki's English G2P. Speak text as is, or convert it into any RVC voice. The system voice is still available. |
 | **Optional & modular** | Every heavy feature is opt-in, with hardware warnings. The voice engine can also be compiled out at build time. |
 | **Updates** | In-app check against GitHub Releases, plus a remote model/voice catalogue. |

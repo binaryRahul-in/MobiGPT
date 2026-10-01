@@ -247,5 +247,18 @@
         }
       ]
     }
+  },
+  "templates": {
+    "urls": [
+      "https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/{name}"
+    ],
+    "available": [
+      "rvc_template_v1_32k.onnx",
+      "rvc_template_v1_40k.onnx",
+      "rvc_template_v1_48k.onnx",
+      "rvc_template_v2_32k.onnx",
+      "rvc_template_v2_40k.onnx",
+      "rvc_template_v2_48k.onnx"
+    ]
   }
 }

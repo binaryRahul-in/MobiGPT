@@ -2,6 +2,7 @@
 import type {
   EngineInfo,
   ModelInspection,
+  RvcCheckpointInfo,
   TtsRequest,
   VoiceEngineConfig,
   VoiceJsi,
@@ -86,7 +87,10 @@ export const fakeEngine: VoiceJsi = {
   play: jest.fn(async () => ({completed: true})),
   stopPlayback: jest.fn(),
   isPlaying: () => false,
-  inspect: jest.fn(async (path: string) => inspections.get(path) ?? synthInspection()),
+  // Keyed by full path or by a file-name suffix (imported voices get an id prefix).
+  inspect: jest.fn(
+    async (path: string) => inspections.get(path) ?? [...inspections].find(([k]) => path.endsWith(k))?.[1] ?? synthInspection(),
+  ),
   analyzePitch: jest.fn(async () => [0, 220, 221]),
   benchmark: jest.fn(async (seconds: number) => ({
     audioSeconds: seconds,
@@ -95,6 +99,24 @@ export const fakeEngine: VoiceJsi = {
     stages: {encoderMs: 400, pitchMs: 300, synthMs: 800, totalMs: 1500},
     providers: ['synth:xnnpack'],
   })),
+  rvcInfo: jest.fn(async (path: string) => {
+    if (!fs.__files().has(path)) {
+      throw new Error(`ENOENT ${path}`);
+    }
+    return rvcInfos.get(path.split('/').pop() ?? '') ?? defaultRvcInfo();
+  }),
+  rvcImport: jest.fn(async (path: string, template: string, outDir: string) => {
+    if (!fs.__files().has(template)) {
+      throw new Error(`template missing: ${template}`);
+    }
+    fs.__putFile(`${outDir}/model.onnx`, 900_000);
+    fs.__putFile(`${outDir}/weights.bin`, 55_074_816);
+    return {
+      modelPath: `${outDir}/model.onnx`,
+      weightsBytes: 55_074_816,
+      info: rvcInfos.get(path.split('/').pop() ?? '') ?? defaultRvcInfo(),
+    };
+  }),
   ttsLoad: jest.fn(async () => {
     ttsLoaded = true;
     return {provider: 'xnnpack', warnings: []};
@@ -119,6 +141,21 @@ export const fakeEngine: VoiceJsi = {
 };
 
 let ttsLoaded = false;
+/** Checkpoint descriptions by file name (default: a v2 40 kHz pitch-guided voice). */
+export const rvcInfos = new Map<string, RvcCheckpointInfo>();
+export const defaultRvcInfo = (): RvcCheckpointInfo => ({
+  pthName: 'Voice.pth',
+  version: 'v2',
+  sampleRate: 40000,
+  f0: true,
+  speakers: 109,
+  featureDim: 768,
+  dtype: 'float16',
+  tensors: 457,
+  hasIndex: true,
+  info: '300epoch',
+  template: 'rvc_template_v2_40k.onnx',
+});
 export const ttsRequests: TtsRequest[] = [];
 
 export const isVoiceModuleAvailable = () => true;

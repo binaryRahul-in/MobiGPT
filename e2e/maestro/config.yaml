@@ -7,6 +7,7 @@ flows:
   - "04-*"
   - "05-*"
   - "06-*"
+  - "07-*"
 executionOrder:
   continueOnFailure: true
   flowsOrder:
@@ -16,3 +17,4 @@ executionOrder:
     - 04-llm-chat
     - 05-voice-engine
     - 06-neural-tts
+    - 07-import-rvc-zip

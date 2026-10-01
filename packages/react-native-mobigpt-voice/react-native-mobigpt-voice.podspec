@@ -23,6 +23,7 @@ Pod::Spec.new do |s|
   ]
   s.private_header_files = "cpp/**/*.h"
   s.frameworks = "AVFoundation", "Accelerate"
+  s.libraries = "z"  # ZIP/DEFLATE for importing .pth/.zip voices
 
   # ONNX Runtime C/C++ API (+ CoreML execution provider) — same runtime the
   # Android build links, so the C++ engine is identical on both platforms.

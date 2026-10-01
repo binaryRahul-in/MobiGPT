@@ -14,6 +14,7 @@ on:
       - '.github/workflows/ci.yml'
       - '.github/workflows/ios.yml'
       - '.github/workflows/publish-models.yml'
+      - '.github/workflows/inspect-voice.yml'
       - '.github/workflows/release.yml'
   pull_request:
   workflow_dispatch:

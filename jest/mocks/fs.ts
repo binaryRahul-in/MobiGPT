@@ -39,6 +39,13 @@ export function __setRemoteText(name: string, text: string) {
   remoteTexts.set(name, text);
   nameSizes.set(name, text.length);
 }
+/** First bytes of a file, base64: ZIP magic for .zip/.pth (like real checkpoints), ONNX otherwise. */
+export async function read(p: string, _length: number, _position: number, _encoding: string) {
+  if (!files.has(p)) {
+    throw new Error(`ENOENT ${p}`);
+  }
+  return /\.(zip|pth)$/i.test(p) ? 'UEsDBA==' : 'CAgSDA==';
+}
 export async function readFile(p: string, _encoding?: string) {
   const t = texts.get(p);
   if (t == null) {
@@ -61,7 +68,10 @@ export async function mkdir(p: string) {
   dirs.add(p);
 }
 export async function unlink(p: string) {
-  if (!files.delete(p) && !dirs.delete(p)) {
+  // Like RNFS: deletes files, or directories with everything inside them.
+  const inside = [...files.keys()].filter(f => f.startsWith(`${p}/`));
+  inside.forEach(f => files.delete(f));
+  if (!files.delete(p) && !dirs.delete(p) && inside.length === 0) {
     throw new Error(`ENOENT ${p}`);
   }
 }

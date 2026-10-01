@@ -127,7 +127,7 @@ jobs:
             build/rvc-e2e/report.md
 
   model-tools:
-    name: Model tools · FP16 / INT8 conversion + .pth export
+    name: Model tools · FP16 / INT8 conversion, .pth export and on-device import
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -138,12 +138,21 @@ jobs:
       - run: pip install numpy onnx onnxruntime==${ORT_VERSION} onnxconverter-common librosa
       - name: FP16 / INT8 conversion of every RVC layout
         run: python tools/rvc/test_quantize.py
-      - name: Export a voice with the real RVC model code (FP32 and --fp16)
+      - name: Build engine CLI
+        run: |
+          set -o pipefail
+          mkdir -p build/native
+          curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" | tar xz -C build/native
+          ORT_ROOT=$PWD/build/native/onnxruntime-linux-x64-${ORT_VERSION}
+          echo "LD_LIBRARY_PATH=$ORT_ROOT/lib" >> "$GITHUB_ENV"
+          cmake -S packages/react-native-mobigpt-voice -B build/rvc -DORT_ROOT=$ORT_ROOT -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/rvc -j4 --target mobigpt-rvc
+      - name: Export a voice with the real RVC model code (FP32, --fp16) and import it as the app does (.zip -> template)
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           git clone -q --filter=blob:none https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI build/rvc-src
           git -C build/rvc-src checkout -q 7ef1986
-          python tools/rvc/ci_export_voice.py --rvc-repo build/rvc-src --out build/voice-export
+          python tools/rvc/ci_export_voice.py --rvc-repo build/rvc-src --out build/voice-export --cli build/rvc/mobigpt-rvc
 
   tts-real-model:
     name: TTS · Kokoro-82M through the app's G2P + engine, checked by ASR

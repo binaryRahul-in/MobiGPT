@@ -74,11 +74,24 @@ export interface VoiceEntry {
   version: string;
   usesF0: boolean;
   layout: string;
-  source: 'preset' | 'import' | 'hf';
+  source: 'preset' | 'import' | 'hf' | 'url';
   repo?: string;
   description?: string;
   addedAt: number;
+  /** Set for voices imported from a .pth/.zip: the folder holding model.onnx + weights.bin. */
+  dir?: string;
+  /** Where an imported voice came from, e.g. "Peter Griffin.pth (v2, 40 kHz)". */
+  origin?: string;
 }
+
+/** Progress of importing a voice from a file, link or the Hub. */
+export interface VoiceImportState {
+  stage: 'download' | 'reading' | 'template' | 'converting' | 'checking';
+  label: string;
+  downloadId?: string;
+}
+
+const VOICE_FILE = /\.(onnx|pth|zip)$/i;
 
 export interface ConversionRecord {
   id: string;
@@ -96,6 +109,8 @@ type VoicesCatalog = {
   pitch: VoiceAssetPreset[];
   voices: VoicePreset[];
   search: {query: string; hint: string};
+  /** Weight-free RVC graph templates for importing .pth voices ({name} = template file name). */
+  templates: {urls: string[]; available: string[]};
 };
 
 export const voicesCatalog = bundledVoices as unknown as VoicesCatalog;
@@ -120,6 +135,7 @@ export class VoiceStore {
   ttsVoices: TtsVoice[] = [];
   error: string | null = null;
   lastBenchmark: VoiceBenchmark | null = null;
+  importing: VoiceImportState | null = null;
 
   readonly downloads: DownloadManager;
   private hf: HFClient;
@@ -272,39 +288,136 @@ export class VoiceStore {
   async addHfVoice(repo: string, file: string) {
     await ensureDirs();
     const id = `hf:${repo}/${file}`;
-    const {path, size} = await this.fetchFromHf(id, repo, file, file, 0, Paths.voices);
-    const name = file
-      .split('/')
-      .pop()!
-      .replace(/\.onnx$/i, '');
-    await this.registerVoice(path, size, {id, name, source: 'hf', repo});
+    runInAction(() => (this.importing = {stage: 'download', label: file, downloadId: id}));
+    try {
+      const {path} = await this.fetchFromHf(id, repo, file, file, 0, Paths.temp);
+      return await this.addVoiceFile(path, voiceNameFrom(file), {id, source: 'hf', repo});
+    } finally {
+      runInAction(() => (this.importing = null));
+    }
   }
 
   async importVoice(): Promise<VoiceEntry | null> {
     await ensureDirs();
-    const f = await pickAndImport(Paths.voices, ['.onnx']);
+    const f = await pickAndImport(Paths.temp, ['.onnx', '.pth', '.zip']);
     if (!f) {
       return null;
     }
-    return this.registerVoice(f.path, f.size, {id: uid('v_'), name: f.name.replace(/\.onnx$/i, ''), source: 'import'});
+    return this.addVoiceFile(f.path, voiceNameFrom(f.name), {source: 'import'});
+  }
+
+  /** Adds a voice from a direct link: .onnx, .pth or an RVC .zip (e.g. a Hugging Face "resolve" URL). */
+  async addVoiceFromUrl(url: string): Promise<VoiceEntry> {
+    const clean = url.trim();
+    if (!/^https?:\/\//i.test(clean)) {
+      throw new Error('Paste a full https:// link to an .onnx, .pth or .zip voice.');
+    }
+    const fileName = decodeURIComponent(clean.split('?')[0].split('/').pop() || 'voice');
+    if (!VOICE_FILE.test(fileName)) {
+      throw new Error('The link must point to an .onnx, .pth or .zip file (on Hugging Face use the "resolve" download link).');
+    }
+    await ensureDirs();
+    this.hf.setToken(this.settings.hfToken);
+    const id = `url:${clean}`;
+    const dest = `${Paths.temp}/${safeFileName(`import-${Date.now()}-${fileName}`)}`;
+    runInAction(() => (this.importing = {stage: 'download', label: fileName, downloadId: id}));
+    try {
+      await this.downloads.start(id, clean, dest, fileName, 0);
+      return await this.addVoiceFile(dest, voiceNameFrom(fileName), {source: 'url', description: clean});
+    } finally {
+      runInAction(() => (this.importing = null));
+    }
+  }
+
+  /**
+   * Adds a downloaded/picked voice file. ONNX voices are moved into the library as they are;
+   * .pth checkpoints (bare or inside an RVC .zip) are converted on the device: the tensors are
+   * copied into weights.bin next to a weight-free graph template for their architecture.
+   */
+  async addVoiceFile(
+    path: string,
+    name: string,
+    meta: {source: VoiceEntry['source']; repo?: string; description?: string; id?: string},
+  ): Promise<VoiceEntry> {
+    await ensureDirs();
+    const id = meta.id ?? uid('v_');
+    if (/\.onnx$/i.test(path) || !(await looksLikeZip(path))) {
+      const dest = `${Paths.voices}/${safeFileName(`${id}-${name}`)}.onnx`;
+      await FS.moveFile(path, dest);
+      const size = (await FS.stat(dest)).size;
+      return this.registerVoice(dest, size, {id, name, ...meta});
+    }
+    const engine = await this.requireEngine();
+    const dir = `${Paths.voices}/${safeFileName(id)}`;
+    try {
+      runInAction(() => (this.importing = {stage: 'reading', label: name}));
+      const info = await engine.rvcInfo(path);
+      if (!info.f0) {
+        throw new Error('This voice was trained without pitch guidance (f0 = 0), which MobiGPT does not support yet.');
+      }
+      if (!voicesCatalog.templates.available.includes(info.template)) {
+        throw new Error(`RVC ${info.version} voices at ${info.sampleRate / 1000} kHz are not supported yet.`);
+      }
+      runInAction(() => (this.importing = {stage: 'template', label: name, downloadId: `template:${info.template}`}));
+      const template = await this.ensureTemplate(info.template);
+      runInAction(() => (this.importing = {stage: 'converting', label: name}));
+      if (!(await FS.exists(dir))) {
+        await FS.mkdir(dir);
+      }
+      const r = await engine.rvcImport(path, template, dir);
+      runInAction(() => (this.importing = {stage: 'checking', label: name}));
+      const origin = `${info.pthName} · RVC ${info.version} · ${info.sampleRate / 1000} kHz${info.info ? ` · ${info.info}` : ''}`;
+      const entry = await this.registerVoice(r.modelPath, r.weightsBytes, {id, name, ...meta, dir, origin});
+      await FS.unlink(path).catch(() => undefined);
+      return entry;
+    } catch (e) {
+      await FS.unlink(dir).catch(() => undefined);
+      throw e;
+    } finally {
+      runInAction(() => (this.importing = null));
+    }
+  }
+
+  /** Downloads (once) the graph template for an RVC architecture. */
+  private async ensureTemplate(name: string): Promise<string> {
+    const dir = `${Paths.voiceBase}/templates`;
+    const dest = `${dir}/${name}`;
+    if (await FS.exists(dest)) {
+      return dest;
+    }
+    if (!(await FS.exists(dir))) {
+      await FS.mkdir(dir);
+    }
+    let last: unknown = new Error('No source for voice templates');
+    for (const pattern of voicesCatalog.templates.urls) {
+      try {
+        await this.downloads.start(`template:${name}`, pattern.replace('{name}', name), dest, `Voice template ${name}`, 0);
+        return dest;
+      } catch (e) {
+        last = e;
+        this.downloads.clear(`template:${name}`);
+      }
+    }
+    throw last;
   }
 
   /** Validates a synthesiser with the native inspector before adding it. */
   async registerVoice(
     path: string,
     size: number,
-    meta: {id: string; name: string; source: VoiceEntry['source']; repo?: string; description?: string},
+    meta: {id: string; name: string; source: VoiceEntry['source']; repo?: string; description?: string; dir?: string; origin?: string},
   ): Promise<VoiceEntry> {
     const engine = await this.requireEngine();
     let info: ModelInspection;
+    const discard = () => FS.unlink(meta.dir ?? path).catch(() => undefined);
     try {
       info = await engine.inspect(path);
     } catch (e: any) {
-      await FS.unlink(path).catch(() => undefined);
+      await discard();
       throw new Error(`Not a valid ONNX model: ${e?.message ?? e}`);
     }
     if (info.kind !== 'synthesizer' || !info.voice) {
-      await FS.unlink(path).catch(() => undefined);
+      await discard();
       throw new Error(
         info.kind === 'encoder' || info.kind === 'rmvpe' || info.kind === 'fcpe'
           ? `This file is a ${info.kind} model, not a voice. Install it from the "Engine packs" section instead.`
@@ -324,6 +437,8 @@ export class VoiceStore {
       repo: meta.repo,
       description: meta.description,
       addedAt: Date.now(),
+      dir: meta.dir,
+      origin: meta.origin,
     };
     runInAction(() => {
       this.voices = this.voices.filter(v => v.id !== entry.id);
@@ -341,7 +456,7 @@ export class VoiceStore {
     if (this.selectedVoiceId === id) {
       await this.unloadEngine();
     }
-    await FS.unlink(v.path).catch(() => undefined);
+    await FS.unlink(v.dir ?? v.path).catch(() => undefined);
     runInAction(() => {
       this.voices = this.voices.filter(x => x.id !== id);
       if (this.selectedVoiceId === id) {
@@ -380,9 +495,10 @@ export class VoiceStore {
     return this.hf.search(query || voicesCatalog.search.query, 'onnx', 30);
   }
 
-  async listOnnx(repo: string) {
+  /** Voice files in a Hub repo: ONNX voices, RVC .pth checkpoints and RVC .zip bundles. */
+  async listVoiceFiles(repo: string) {
     const files = await this.hf.listFiles(repo);
-    return files.filter(f => f.path.toLowerCase().endsWith('.onnx'));
+    return files.filter(f => VOICE_FILE.test(f.path) && !/(^|\/)(G|D)_\d+\.pth$/i.test(f.path) && !/\.index$/i.test(f.path));
   }
 
   // ---------------------------------------------------------------- engine
@@ -634,5 +750,25 @@ export class VoiceStore {
   private clearTimers() {
     this.timers.forEach(clearInterval);
     this.timers = [];
+  }
+}
+
+function voiceNameFrom(fileName: string): string {
+  return (
+    decodeURIComponent(fileName.split('/').pop() ?? fileName)
+      .replace(/\.(onnx|pth|zip)$/i, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Voice'
+  );
+}
+
+/** .pth checkpoints and RVC bundles are ZIP files ("PK\x03\x04"); ONNX files are not. */
+async function looksLikeZip(path: string): Promise<boolean> {
+  try {
+    const head = await FS.read(path, 4, 0, 'base64');
+    return head.startsWith('UEsDB');
+  } catch {
+    return /\.(pth|zip)$/i.test(path);
   }
 }

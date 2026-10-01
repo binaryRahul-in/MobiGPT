@@ -27,6 +27,8 @@ target_include_directories(mobigpt_rvc_core PUBLIC cpp/rvc cpp/platform cpp/thir
 target_link_libraries(mobigpt_rvc_core PUBLIC ${ORT_LIBRARY})
 find_package(Threads REQUIRED)
 target_link_libraries(mobigpt_rvc_core PUBLIC Threads::Threads)
+find_package(ZLIB REQUIRED)
+target_link_libraries(mobigpt_rvc_core PUBLIC ZLIB::ZLIB)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(mobigpt_rvc_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
   # Vendored WORLD code is not ours to lint.
@@ -43,7 +45,7 @@ add_executable(mobigpt-rvc tools/cli.cpp)
 target_link_libraries(mobigpt-rvc PRIVATE mobigpt_rvc_core)
 
 enable_testing()
-add_executable(rvc_tests tests/test_main.cpp tests/test_dsp.cpp tests/test_pitch.cpp tests/test_pipeline.cpp tests/test_tts.cpp)
+add_executable(rvc_tests tests/test_main.cpp tests/test_dsp.cpp tests/test_pitch.cpp tests/test_pipeline.cpp tests/test_tts.cpp tests/test_import.cpp)
 target_link_libraries(rvc_tests PRIVATE mobigpt_rvc_core)
 target_include_directories(rvc_tests PRIVATE tests)
 set(MOBIGPT_FIXTURES ${CMAKE_CURRENT_BINARY_DIR}/fixtures CACHE PATH "Generated test fixtures")

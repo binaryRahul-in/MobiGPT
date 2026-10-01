@@ -10,7 +10,7 @@ projects. Their licenses are reproduced or linked below.
 | [llama.rn](https://github.com/mybigday/llama.rn) / [llama.cpp](https://github.com/ggml-org/llama.cpp) | LLM inference (CPU, OpenCL, Metal, Hexagon) | MIT |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Voice engine inference (CPU, XNNPACK, NNAPI, QNN, Core ML) | MIT |
 | [WORLD](https://github.com/mmorise/World) © 2010 M. Morise | DIO, Harvest and StoneMask pitch trackers, vendored in `packages/react-native-mobigpt-voice/cpp/third_party/world` | BSD-3-Clause |
-| [RVC-Project](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI) | Reference pipeline (feature 2x upsampling, coarse pitch, RMVPE decoding, ONNX export in `tools/rvc/export_voice_onnx.py`) | MIT |
+| [RVC-Project](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI) | Reference pipeline (feature 2x upsampling, coarse pitch, RMVPE decoding); its ONNX model definition is exported by `tools/rvc/export_voice_onnx.py` and into the weight-free voice templates used for on-device `.pth` import | MIT |
 | [FCPE / torchfcpe](https://github.com/CNChTu/FCPE) | Reference mel front-end + local-argmax decoder | MIT |
 | [voiceclonnx](https://github.com/TigreGotico/voiceclonnx) | Reference ONNX exports and INT8 measurements for ContentVec/RMVPE | MIT |
 | [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) © hexgrad | Neural TTS model, downloaded at runtime; its phoneme vocabulary is embedded in `src/services/tts/vocab.ts` | Apache-2.0 |

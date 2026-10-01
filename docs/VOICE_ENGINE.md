@@ -134,7 +134,35 @@ The synthesizer dominates. The DSP pitch trackers remove almost all of the pitch
 Phones with 8 ARM cores are expected to run 2–4× faster than this shared runner. **Benchmarks → Voice**
 measures the real figure on each device, and live mode shows a warning whenever RTF ≥ 1.
 
-## Converting your own voices
+## Adding voices: .zip, .pth or .onnx, on the phone
+
+Community RVC voices are usually shared as a `.zip` containing the `.pth` checkpoint and a FAISS `.index`
+(for example `AIMan2001/PeterGriffin`). In **Voice → Library → Mine** you can pick that file, or paste its link
+(on Hugging Face, the `…/resolve/main/…zip` download URL). The Hub search accepts `.zip`/`.pth` too. No PC is needed:
+
+```
+.zip ──► unzip (DEFLATE, zlib) ──► .pth = ZIP{data.pkl, data/<n>}
+                                   │ a minimal pickle reader: torch.save's opcodes only, never executes code
+                                   ▼
+          version, sample rate, f0, speakers ──► rvc_template_<v>_<sr>.onnx (≈ 0.9 MB, downloaded once)
+                                   │ every initializer = a checkpoint key, FP16, stored in an external file
+                                   ▼
+          weights.bin ◄── tensors copied as FP16 (FP32/BF16 converted, speaker table padded or truncated)
+          model.onnx  ◄── the template, which ONNX Runtime loads with weights.bin next to it
+```
+
+The templates are RVC's own ONNX graph (`models_onnx.SynthesizerTrnMsNSFsidM`, commit 7ef1986), exported once per
+architecture (v1/v2 × 32/40/48 kHz) by `tools/rvc/make_voice_templates.py` from unique random values, so that every
+initializer maps 1:1 to a checkpoint key (457 for v2). An imported voice matches `export_voice_onnx.py --fp16` (correlation
+0.9999, checked in CI). The `.index` is ignored because MobiGPT runs with `index_rate = 0`. Voices trained without pitch
+guidance (f0 = 0) are not supported yet.
+
+`.github/workflows/inspect-voice.yml` answers "will this voice work?" for any link: it reports the archive's contents,
+converts it both ways (PC exporter and on-device importer), and runs speech through the engine. For `AIMan2001/PeterGriffin`
+it found RVC v2, 48 kHz, pitch-guided, 375 epochs, 457 FP16 tensors, and the output pitch followed the input (1.00) with DIO
+and FCPE.
+
+The PC route still works and produces a single `.onnx`:
 
 ```bash
 git clone https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI rvc
@@ -142,8 +170,6 @@ git -C rvc checkout 7ef1986   # RVC 2.3 removed the ONNX model definitions; this
 pip install torch onnx onnxconverter-common
 python tools/rvc/export_voice_onnx.py --rvc-repo rvc my_voice.pth my_voice.onnx --fp16   # --fp16: half-size weights, same quality
 ```
-
-Import the `.onnx` in **Voice → Library → Mine → Import**, or push it to a Hugging Face repo and use **Hub** search.
 
 ## Neural text-to-speech (Kokoro-82M)
 

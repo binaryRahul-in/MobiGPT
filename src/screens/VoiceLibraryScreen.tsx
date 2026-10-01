@@ -1,7 +1,7 @@
 import {observer} from 'mobx-react-lite';
 import React, {useState} from 'react';
 import {Alert, StyleSheet, View} from 'react-native';
-import {ActivityIndicator, Button, Chip, List, Searchbar, SegmentedButtons, Snackbar, Text, useTheme} from 'react-native-paper';
+import {ActivityIndicator, Button, Chip, List, Searchbar, SegmentedButtons, Snackbar, Text, TextInput, useTheme} from 'react-native-paper';
 
 import {DownloadProgress, Screen, Section} from '../components/ui';
 import {RootScreenProps} from '../navigation/types';
@@ -50,25 +50,15 @@ export const VoiceLibraryScreen = observer(function VoiceLibraryScreen({route}: 
             subtitle={`${voice.voices.length} installed · ${formatBytes(voice.installedBytes)} total`}
             icon="account-music"
           >
-            <Button
-              mode="contained"
-              icon="file-import-outline"
-              onPress={() => guard(() => voice.importVoice(), 'Voice imported')}
-              testID="voice-import"
-            >
-              Import .onnx voice
-            </Button>
-            <Text variant="bodySmall" style={{color: theme.colors.onSurfaceVariant}}>
-              Any RVC v1/v2 synthesiser exported to ONNX works (RVC WebUI "Export ONNX" or w-okada voice-changer). Have a .pth? Convert it
-              on a PC with tools/rvc/export_voice_onnx.py.
-            </Text>
+            <AddVoice onMessage={setMsg} />
             {voice.voices.map(v => (
               <List.Item
                 key={v.id}
                 title={v.name}
                 description={`${v.version} · ${v.sampleRate / 1000} kHz · ${v.usesF0 ? 'f0' : 'no-f0'} · ${formatBytes(v.sizeBytes)} · ${
                   v.source
-                }`}
+                }${v.origin ? `\n${v.origin}` : ''}`}
+                descriptionNumberOfLines={3}
                 left={p => <List.Icon {...p} icon={v.id === voice.selectedVoice?.id ? 'check-circle' : 'account-voice'} />}
                 onPress={() => voice.selectVoice(v.id)}
                 right={() => (
@@ -243,7 +233,7 @@ const HubSearch = observer(function HubSearch({onMessage}: {onMessage: (m: strin
   const open = async (id: string) => {
     setBusy(true);
     try {
-      setFiles(await voice.listOnnx(id));
+      setFiles(await voice.listVoiceFiles(id));
       setRepo(id);
     } catch (e: any) {
       onMessage(e?.message ?? String(e));
@@ -261,7 +251,7 @@ const HubSearch = observer(function HubSearch({onMessage}: {onMessage: (m: strin
           <Button icon="arrow-left" onPress={() => setRepo(null)}>
             {repo}
           </Button>
-          {files.length === 0 ? <Text variant="bodySmall">No .onnx files in this repository.</Text> : null}
+          {files.length === 0 ? <Text variant="bodySmall">No .onnx, .pth or .zip voices in this repository.</Text> : null}
           {files.map(f => (
             <List.Item
               key={f.path}
@@ -298,9 +288,82 @@ const HubSearch = observer(function HubSearch({onMessage}: {onMessage: (m: strin
   );
 });
 
+/** Import from the device or from a link; .onnx, .pth and RVC .zip bundles are all accepted. */
+const AddVoice = observer(function AddVoice({onMessage}: {onMessage: (m: string) => void}) {
+  const theme = useTheme();
+  const {voice} = useStores();
+  const [url, setUrl] = useState('');
+  const job = voice.importing;
+  const task = job?.downloadId ? voice.downloads.get(job.downloadId) : undefined;
+  const run = (fn: () => Promise<{name: string} | null>) =>
+    fn()
+      .then(v => {
+        if (v) {
+          setUrl('');
+          onMessage(`${v.name} added`);
+        }
+      })
+      .catch(e => onMessage(e?.message ?? String(e)));
+  if (job) {
+    return (
+      <View style={styles.item} testID="voice-import-progress">
+        <Text variant="labelLarge">{IMPORT_STAGE[job.stage]}</Text>
+        <Text variant="bodySmall" numberOfLines={1} style={{color: theme.colors.onSurfaceVariant}}>
+          {job.label}
+        </Text>
+        {task && task.state === 'downloading' ? (
+          <DownloadProgress
+            bytes={task.bytes}
+            total={task.total}
+            speedBps={task.speedBps}
+            onCancel={() => voice.downloads.cancel(task.id)}
+          />
+        ) : (
+          <ActivityIndicator />
+        )}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.item}>
+      <Button mode="contained" icon="file-import-outline" onPress={() => run(() => voice.importVoice())} testID="voice-import">
+        Import from this device
+      </Button>
+      <View style={styles.row}>
+        <TextInput
+          mode="outlined"
+          dense
+          style={styles.flex}
+          placeholder="…or paste a link (.zip, .pth, .onnx)"
+          value={url}
+          onChangeText={setUrl}
+          autoCapitalize="none"
+          autoCorrect={false}
+          testID="voice-url"
+        />
+        <Button mode="contained-tonal" disabled={!url.trim()} onPress={() => run(() => voice.addVoiceFromUrl(url))} testID="voice-url-add">
+          Add
+        </Button>
+      </View>
+      <Text variant="bodySmall" style={{color: theme.colors.onSurfaceVariant}}>
+        RVC v1/v2 voices as shared online work directly: a .zip from RVC WebUI or Hugging Face, a bare .pth, or an ONNX export. A .pth is
+        converted on this phone (no PC needed); the FAISS .index that often comes with it isn't used.
+      </Text>
+    </View>
+  );
+});
+
+const IMPORT_STAGE: Record<string, string> = {
+  download: 'Downloading voice…',
+  reading: 'Reading the checkpoint…',
+  template: 'Fetching the voice architecture (≈ 1 MB, once)…',
+  converting: 'Converting on this phone…',
+  checking: 'Checking the voice…',
+};
+
 const styles = StyleSheet.create({
   flex: {flex: 1},
   tabs: {margin: spacing.md, marginBottom: 0},
   item: {gap: 6, paddingBottom: spacing.sm},
-  row: {flexDirection: 'row', gap: 6},
+  row: {flexDirection: 'row', gap: 6, alignItems: 'center'},
 });

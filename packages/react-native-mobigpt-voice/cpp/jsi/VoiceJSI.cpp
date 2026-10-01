@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 
+#include "../rvc/Checkpoint.h"
 #include "../rvc/VoiceService.h"
 
 using namespace facebook;
@@ -406,6 +407,48 @@ void install(jsi::Runtime& rt, std::shared_ptr<react::CallInvoker> invoker) {
         o.setProperty(rt, "sampleRate", r.outputSampleRate);
         o.setProperty(rt, "stages", toJs(rt, r.stages));
         o.setProperty(rt, "providers", strings(rt, r.providers));
+        return jsi::Value(std::move(o));
+      };
+    });
+  });
+
+  // ------------------------------------------------------- .pth/.zip voices
+
+  auto rvcInfoJs = [](jsi::Runtime& rt, const rvc::RvcCheckpointInfo& in) {
+    jsi::Object o(rt);
+    o.setProperty(rt, "pthName", jsi::String::createFromUtf8(rt, in.pthName));
+    o.setProperty(rt, "version", jsi::String::createFromUtf8(rt, in.version));
+    o.setProperty(rt, "sampleRate", in.sampleRate);
+    o.setProperty(rt, "f0", in.f0);
+    o.setProperty(rt, "speakers", in.speakers);
+    o.setProperty(rt, "featureDim", in.featureDim);
+    o.setProperty(rt, "dtype", jsi::String::createFromUtf8(rt, in.dtype));
+    o.setProperty(rt, "tensors", static_cast<double>(in.tensors));
+    o.setProperty(rt, "hasIndex", in.hasIndex);
+    o.setProperty(rt, "info", jsi::String::createFromUtf8(rt, in.info));
+    o.setProperty(rt, "template", jsi::String::createFromUtf8(rt, rvc::rvcTemplateName(in)));
+    return o;
+  };
+
+  setFn(rt, api, "rvcInfo", 1, [rvcInfoJs](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t n) -> jsi::Value {
+    const std::string path = argString(rt, args, n, 0, "path");
+    return makePromise(rt, [path, rvcInfoJs]() -> Converter {
+      auto in = rvc::inspectRvcCheckpoint(path);
+      return [in, rvcInfoJs](jsi::Runtime& rt) { return jsi::Value(rvcInfoJs(rt, in)); };
+    });
+  });
+
+  setFn(rt, api, "rvcImport", 3, [rvcInfoJs](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t n) -> jsi::Value {
+    const std::string path = argString(rt, args, n, 0, "path");
+    const std::string tpl = argString(rt, args, n, 1, "templatePath");
+    const std::string outDir = argString(rt, args, n, 2, "outDir");
+    return makePromise(rt, [path, tpl, outDir, rvcInfoJs]() -> Converter {
+      auto r = rvc::importRvcCheckpoint(path, tpl, outDir);
+      return [r, rvcInfoJs](jsi::Runtime& rt) {
+        jsi::Object o(rt);
+        o.setProperty(rt, "modelPath", jsi::String::createFromUtf8(rt, r.modelPath));
+        o.setProperty(rt, "weightsBytes", static_cast<double>(r.weightsBytes));
+        o.setProperty(rt, "info", rvcInfoJs(rt, r.info));
         return jsi::Value(std::move(o));
       };
     });

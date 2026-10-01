@@ -130,11 +130,36 @@ export interface VoiceJsi {
   analyzePitch(path: string, method: PitchMethod, modelPath?: string): Promise<number[]>;
   benchmark(seconds: number): Promise<VoiceBenchmark>;
 
+  // RVC voices shared as PyTorch checkpoints (.pth, or a .zip holding one).
+  rvcInfo(path: string): Promise<RvcCheckpointInfo>;
+  /** Writes outDir/model.onnx (a copy of the template) + outDir/weights.bin. */
+  rvcImport(
+    path: string,
+    templatePath: string,
+    outDir: string,
+  ): Promise<{modelPath: string; weightsBytes: number; info: RvcCheckpointInfo}>;
+
   // Neural text-to-speech (Kokoro-82M). Independent of the RVC engine.
   ttsLoad(modelPath: string, options?: {accelerator?: Accelerator; threads?: number; lowMemory?: boolean}): Promise<TtsModelInfo>;
   ttsUnload(): Promise<void>;
   ttsIsLoaded(): boolean;
   ttsSynthesize(request: TtsRequest): Promise<TtsResult>;
+}
+
+export interface RvcCheckpointInfo {
+  pthName: string;
+  version: 'v1' | 'v2' | string;
+  sampleRate: number;
+  f0: boolean;
+  speakers: number;
+  featureDim: number;
+  dtype: string;
+  tensors: number;
+  /** A FAISS .index came with the voice; MobiGPT does not need it (index_rate = 0). */
+  hasIndex: boolean;
+  info: string;
+  /** Graph template file needed to import it, e.g. "rvc_template_v2_40k.onnx". */
+  template: string;
 }
 
 export interface TtsModelInfo {

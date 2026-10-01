@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "Checkpoint.h"
 #include "Pipeline.h"
 #include "VoiceService.h"
 
@@ -29,6 +30,8 @@ void usage() {
                "  mobigpt-rvc pitch --method M [--pitch-model P] IN.wav\n"
                "  mobigpt-rvc tts --model KOKORO.onnx --voice VOICE.bin --tokens \"ids,…;ids,…\" [--pauses \"s;s\"]\n"
                "                  [--speed 1.0] OUT.wav\n"
+               "  mobigpt-rvc rvc-info VOICE.zip|VOICE.pth\n"
+               "  mobigpt-rvc rvc-import --template TEMPLATE.onnx VOICE.zip|VOICE.pth OUT_DIR\n"
                "  mobigpt-rvc info\n");
 }
 
@@ -99,6 +102,22 @@ int main(int argc, char** argv) {
     if (cmd == "pitch" && pos.size() == 1) {
       auto f0 = svc.analyzePitch(pos[0], opt.count("--method") ? opt["--method"] : "dio", opt["--pitch-model"]);
       for (size_t i = 0; i < f0.size(); ++i) std::printf("%.2f\t%.2f\n", i * 0.01, f0[i]);
+      return 0;
+    }
+    if ((cmd == "rvc-info" && pos.size() == 1) || (cmd == "rvc-import" && pos.size() == 2)) {
+      RvcCheckpointInfo in;
+      std::string model;
+      if (cmd == "rvc-info") {
+        in = inspectRvcCheckpoint(pos[0]);
+      } else {
+        auto r = importRvcCheckpoint(pos[0], opt["--template"], pos[1]);
+        in = r.info;
+        model = r.modelPath;
+      }
+      std::printf("{\"pth\":\"%s\",\"version\":\"%s\",\"sampleRate\":%d,\"f0\":%s,\"speakers\":%d,\"featureDim\":%d,"
+                  "\"dtype\":\"%s\",\"tensors\":%zu,\"hasIndex\":%s,\"template\":\"%s\",\"model\":\"%s\"}\n",
+                  in.pthName.c_str(), in.version.c_str(), in.sampleRate, in.f0 ? "true" : "false", in.speakers, in.featureDim,
+                  in.dtype.c_str(), in.tensors, in.hasIndex ? "true" : "false", rvcTemplateName(in).c_str(), model.c_str());
       return 0;
     }
     if (cmd == "tts" && pos.size() == 1) {

@@ -45,4 +45,5 @@ target_link_libraries(mobigpt_voice
   ReactAndroid::reactnative
   ${LOG_LIB}
   android
+  z
 )

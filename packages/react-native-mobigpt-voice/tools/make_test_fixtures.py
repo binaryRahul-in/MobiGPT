@@ -23,14 +23,15 @@ OPSET = 17
 rng = np.random.default_rng(0)
 
 
-def save(model, path, meta=None):
+def save(model, path, meta=None, check=True):
     if meta:
         for k, v in meta.items():
             p = model.metadata_props.add()
             p.key, p.value = k, v
     model.opset_import[0].version = OPSET
     model.ir_version = 8
-    onnx.checker.check_model(model)
+    if check:  # templates reference a weights.bin that only exists after an import
+        onnx.checker.check_model(model)
     onnx.save(model, path)
 
 
@@ -267,6 +268,147 @@ def mel_reference(out):
     write("mel_fcpe.bin", np.log(np.maximum(fb_sl @ S2, 1e-5)))
 
 
+def torch_pth(path, tensors, extra):
+    """Writes a real torch.save()-format checkpoint (ZIP: archive/data.pkl + archive/data/<k>)
+    without PyTorch. Stand-in `torch` modules make pickle emit exactly the GLOBAL /
+    BINPERSID / REDUCE sequence torch uses, so the C++ reader is tested on the real format."""
+    import pickle
+    import sys
+    import types
+    import zipfile
+    from collections import OrderedDict
+
+    torch_mod = sys.modules.get("torch") or types.ModuleType("torch")
+    utils_mod = sys.modules.get("torch._utils") or types.ModuleType("torch._utils")
+
+    def _rebuild_tensor_v2(*a):  # never called; only its name is pickled
+        raise RuntimeError
+
+    _rebuild_tensor_v2.__module__, _rebuild_tensor_v2.__qualname__ = "torch._utils", "_rebuild_tensor_v2"
+    storage_types = {}
+    for nm in ("HalfStorage", "FloatStorage"):
+        cls = type(nm, (), {"__module__": "torch"})
+        storage_types[nm] = cls
+    saved = {k: sys.modules.get(k) for k in ("torch", "torch._utils")}
+    fake_torch, fake_utils = types.ModuleType("torch"), types.ModuleType("torch._utils")
+    fake_utils._rebuild_tensor_v2 = _rebuild_tensor_v2
+    for nm, cls in storage_types.items():
+        setattr(fake_torch, nm, cls)
+    sys.modules["torch"], sys.modules["torch._utils"] = fake_torch, fake_utils
+
+    class Storage:
+        def __init__(self, key, arr):
+            self.key, self.arr = key, arr
+
+    class Tensor:
+        def __init__(self, storage, shape):
+            self.storage, self.shape = storage, shape
+
+        def __reduce__(self):
+            stride, acc = [], 1
+            for d in reversed(self.shape):
+                stride.insert(0, acc)
+                acc *= d
+            return (_rebuild_tensor_v2, (self.storage, 0, tuple(self.shape), tuple(stride), False, OrderedDict()))
+
+    class Pickler(pickle.Pickler):
+        def persistent_id(self, obj):
+            if isinstance(obj, Storage):
+                nm = "HalfStorage" if obj.arr.dtype == np.float16 else "FloatStorage"
+                return ("storage", storage_types[nm], obj.key, "cpu", obj.arr.size)
+            return None
+
+    try:
+        weight, blobs = OrderedDict(), {}
+        for i, (k, arr) in enumerate(tensors.items()):
+            st = Storage(str(i), np.ascontiguousarray(arr))
+            blobs[st.key] = st.arr.tobytes()
+            weight[k] = Tensor(st, list(arr.shape))
+        import io
+
+        buf = io.BytesIO()
+        Pickler(buf, protocol=2).dump({"weight": weight, **extra})
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as z:
+            z.writestr("archive/data.pkl", buf.getvalue())
+            for key, b in blobs.items():
+                z.writestr(f"archive/data/{key}", b)
+            z.writestr("archive/version", "3\n")
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    _ = (torch_mod, utils_mod)
+
+
+def voice_template(out_dir):
+    """A tiny RVC-WebUI-layout voice template plus a matching .pth inside a .zip, mirroring
+    tools/rvc/make_voice_templates.py: FP16 external initializers named after checkpoint keys,
+    a `mobigpt_manifest`, and a speaker table to pad. audio = sine(pitchf) * mean(dec.gain)."""
+    import zipfile
+
+    sr, hop = 40000, 400
+    manifest, inits, offset = [], [], 0
+    shapes = {"dec.gain": [4], "emb_g.weight": [3, 2]}  # template has 3 speaker rows
+    nodes = []
+    for key, shape in shapes.items():
+        nbytes = int(np.prod(shape)) * 2
+        t = TensorProto()
+        t.name, t.data_type = key + "__fp16", TensorProto.FLOAT16
+        t.dims.extend(shape)
+        t.data_location = TensorProto.EXTERNAL
+        for k, v in (("location", "weights.bin"), ("offset", str(offset)), ("length", str(nbytes))):
+            e = t.external_data.add()
+            e.key, e.value = k, v
+        inits.append(t)
+        nodes.append(helper.make_node("Cast", [t.name], [key], to=TensorProto.FLOAT))
+        manifest.append(f"{key}\t{offset}\t{','.join(map(str, shape))}")
+        offset += (nbytes + 63) // 64 * 64
+    inits += [const("two_pi_over_sr", np.array(2 * np.pi / sr, dtype=np.float32)), const("ax2", np.array([2], dtype=np.int64)),
+              const("rep", np.array([1, 1, hop], dtype=np.int64)), const("flat", np.array([1, 1, -1], dtype=np.int64)),
+              const("tiny", np.array(1e-6, dtype=np.float32))]
+    inputs = [helper.make_tensor_value_info("phone", TensorProto.FLOAT, [1, "T", 768]),
+              helper.make_tensor_value_info("phone_lengths", TensorProto.INT64, [1]),
+              helper.make_tensor_value_info("pitch", TensorProto.INT64, [1, "T"]),
+              helper.make_tensor_value_info("pitchf", TensorProto.FLOAT, [1, "T"]),
+              helper.make_tensor_value_info("ds", TensorProto.INT64, [1]),
+              helper.make_tensor_value_info("rnd", TensorProto.FLOAT, [1, 192, "T"])]
+    nodes += [
+        helper.make_node("ReduceMean", ["dec.gain"], ["gain"], keepdims=0),
+        helper.make_node("ReduceMean", ["emb_g.weight"], ["spk"], keepdims=0),
+        helper.make_node("ReduceMean", ["phone"], ["pm"], keepdims=0),
+        helper.make_node("ReduceMean", ["rnd"], ["rm"], keepdims=0),
+        helper.make_node("Add", ["pm", "rm"], ["prm"]),
+        helper.make_node("Add", ["prm", "spk"], ["ties"]),
+        helper.make_node("Mul", ["ties", "tiny"], ["ties_s"]),
+        helper.make_node("Unsqueeze", ["pitchf", "ax2"], ["f3"]),
+        helper.make_node("Tile", ["f3", "rep"], ["f_rep"]),
+        helper.make_node("Reshape", ["f_rep", "flat"], ["f_s"]),
+        helper.make_node("Mul", ["f_s", "two_pi_over_sr"], ["dphi"]),
+        helper.make_node("CumSum", ["dphi", "ax_last"], ["phi"]),
+        helper.make_node("Sin", ["phi"], ["s"]),
+        helper.make_node("Mul", ["s", "gain"], ["y0"]),
+        helper.make_node("Add", ["y0", "ties_s"], ["audio"]),
+    ]
+    inits.append(const("ax_last", np.array(2, dtype=np.int64)))
+    g = helper.make_graph(nodes, "voice_template", inputs, [helper.make_tensor_value_info("audio", TensorProto.FLOAT, [1, 1, "S"])], inits)
+    model = helper.make_model(g)
+    meta = {"sample_rate": str(sr), "version": "v2", "f0": "1", "mobigpt_template": "1", "mobigpt_weights_bytes": str(offset),
+            "mobigpt_speaker_rows": "3", "mobigpt_manifest": "\n".join(manifest)}
+    save(model, os.path.join(out_dir, "rvc_template_v2_40k.onnx"), meta, check=False)
+
+    # The voice: FP32 gain (exercises FP32 -> FP16) and a 2-row speaker table (padded to 3).
+    pth = os.path.join(out_dir, "voice_fixture.pth")
+    torch_pth(pth, {"dec.gain": np.full(4, 0.25, np.float32), "emb_g.weight": np.ones((2, 2), np.float16),
+                    "enc_p.emb_phone.weight": np.zeros((2, 768), np.float16)},
+              {"config": [1025, 32, 192, 192, 768, 2, 6, 3, 0, "1", [3, 7, 11], [[1, 3, 5]] * 3, [10, 10, 2, 2], 512,
+                          [16, 16, 4, 4], 2, 256, sr], "version": "v2", "f0": 1, "sr": "40k", "info": "fixture"})
+    with zipfile.ZipFile(os.path.join(out_dir, "voice_fixture.zip"), "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(pth, "My Voice/My Voice.pth")
+        z.writestr("My Voice/added_IVF1_Flat_nprobe_1_My_Voice_v2.index", b"\0" * 256)
+
+
 def kokoro(path, layout="kokoro-onnx"):
     """Kokoro TTS I/O contract. audio = mean(style) / speed, repeated 100x per input token
     (pads included), so tests can check padding, style-row selection and speed exactly."""
@@ -331,6 +473,7 @@ def main():
     )
     synth(os.path.join(out, "synth_nof0_32k.onnx"), "webui", 32000, with_f0=False, meta={"sample_rate": "32000"})
     synth(os.path.join(out, "synth_v1_40k.onnx"), "webui", 40000, channels=256)
+    voice_template(out)
     kokoro(os.path.join(out, "kokoro.onnx"))
     kokoro(os.path.join(out, "kokoro_community.onnx"), "onnx-community")
     kokoro_voice(os.path.join(out, "kokoro_voice.bin"))

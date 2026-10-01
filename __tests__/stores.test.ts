@@ -266,7 +266,7 @@ describe('VoiceStore', () => {
 
   it('rejects ONNX files that are not RVC voices', async () => {
     const s = await readyVoiceStore();
-    inspections.set('/docs/mobigpt/voice/voices/voice.onnx', {
+    inspections.set('voice.onnx', {
       kind: 'encoder',
       sizeMB: 1,
       quantized: false,
@@ -453,5 +453,92 @@ describe('TtsStore', () => {
     tts.setVoice('am_michael');
     expect(tts.ready).toBe(false);
     expect(tts.plan.map((p: {id: string}) => p.id)).toEqual(['tts-voice:am_michael']);
+  });
+});
+
+describe('VoiceStore · importing RVC voices', () => {
+  const {rvcInfos, defaultRvcInfo} = require('../jest/mocks/voice');
+  const TPL = 'https://github.com/binaryRahul-in/MobiGPT/releases/download/models-v1/rvc_template_v2_48k.onnx';
+  const URL = 'https://huggingface.co/AIMan2001/PeterGriffin/resolve/main/Peter%20Griffin.zip';
+
+  const make = () => new RootStore({persist: false, probe: async () => profile()}).voice;
+
+  beforeEach(() => {
+    fs.__reset();
+    rvcInfos.clear();
+    (fakeEngine.rvcImport as jest.Mock).mockClear();
+    fs.__setRemote(URL, 75_952_056);
+    fs.__setRemote(TPL, 874_289);
+  });
+
+  it('adds a community .zip from a link: download, template, on-device conversion', async () => {
+    rvcInfos.clear();
+    const name = (p: string) => p.split('/').pop()!;
+    (fakeEngine.rvcInfo as jest.Mock).mockImplementationOnce(async (p: string) => ({
+      ...defaultRvcInfo(),
+      pthName: 'PeterGriffin.pth',
+      sampleRate: 48000,
+      info: '375epoch',
+      template: 'rvc_template_v2_48k.onnx',
+      _file: name(p),
+    }));
+    const voice = make();
+    const v = await voice.addVoiceFromUrl(URL);
+    expect(v.name).toBe('Peter Griffin');
+    expect(v.source).toBe('url');
+    expect(v.dir).toMatch(/\/voice\/voices\/v_/);
+    expect(v.path).toBe(`${v.dir}/model.onnx`);
+    expect(v.origin).toBe('PeterGriffin.pth · RVC v2 · 48 kHz · 375epoch');
+    expect(voice.selectedVoice?.id).toBe(v.id);
+    expect(voice.importing).toBeNull();
+    const [src, tpl, out] = (fakeEngine.rvcImport as jest.Mock).mock.calls[0];
+    expect(tpl).toBe('/docs/mobigpt/voice/base/templates/rvc_template_v2_48k.onnx');
+    expect(out).toBe(v.dir);
+    expect(fs.__files().has(src)).toBe(false); // the downloaded archive is cleaned up
+  });
+
+  it('downloads each template only once', async () => {
+    const voice = make();
+    const start = jest.spyOn(voice.downloads, 'start');
+    await voice.addVoiceFromUrl(URL.replace('Peter%20Griffin', 'A'));
+    fs.__setRemote(URL.replace('Peter%20Griffin', 'B'), 1000);
+    await voice.addVoiceFromUrl(URL.replace('Peter%20Griffin', 'B'));
+    const templateDownloads = start.mock.calls.filter(c => String(c[0]).startsWith('template:'));
+    expect(templateDownloads).toHaveLength(1);
+    expect((fakeEngine.rvcImport as jest.Mock).mock.calls).toHaveLength(2);
+    expect(voice.voices.map(x => x.name)).toEqual(['A', 'B']);
+  });
+
+  it('explains what it cannot import', async () => {
+    const voice = make();
+    await expect(voice.addVoiceFromUrl('not a link')).rejects.toThrow(/https:\/\//);
+    await expect(voice.addVoiceFromUrl('https://example.com/voice.mp3')).rejects.toThrow(/\.onnx, \.pth or \.zip/);
+    (fakeEngine.rvcInfo as jest.Mock).mockImplementationOnce(async () => ({...defaultRvcInfo(), f0: false}));
+    await expect(voice.addVoiceFromUrl(URL)).rejects.toThrow(/pitch guidance/);
+    (fakeEngine.rvcInfo as jest.Mock).mockImplementationOnce(async () => ({...defaultRvcInfo(), template: 'rvc_template_v3_24k.onnx'}));
+    fs.__setRemote(URL, 1000);
+    await expect(voice.addVoiceFromUrl(URL)).rejects.toThrow(/not supported yet/);
+    expect(voice.voices).toHaveLength(0);
+    expect(voice.importing).toBeNull();
+  });
+
+  it('removing an imported voice deletes its folder', async () => {
+    const voice = make();
+    const v = await voice.addVoiceFromUrl(URL);
+    expect(fs.__files().has(`${v.dir}/weights.bin`)).toBe(true);
+    await voice.removeVoice(v.id);
+    expect(voice.voices).toHaveLength(0);
+    expect(fs.__files().has(`${v.dir}/weights.bin`)).toBe(false);
+    expect(fs.__files().has(`${v.dir}/model.onnx`)).toBe(false);
+  });
+
+  it('lists .onnx, .pth and .zip voices in a Hub repo, but not training checkpoints or indexes', async () => {
+    const voice = make();
+    (voice as any).hf.listFiles = async () =>
+      ['Peter Griffin.zip', 'model.pth', 'G_2333.pth', 'D_2333.pth', 'added_IVF.index', 'voice.onnx', 'README.md'].map(path => ({
+        path,
+        size: 1,
+      }));
+    expect((await voice.listVoiceFiles('x/y')).map(f => f.path)).toEqual(['Peter Griffin.zip', 'model.pth', 'voice.onnx']);
   });
 });
