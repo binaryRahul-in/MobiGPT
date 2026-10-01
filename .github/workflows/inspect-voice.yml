@@ -1,0 +1,65 @@
+name: Inspect an RVC voice
+
+# Downloads an RVC voice (.zip with .pth/.index, a bare .pth, or an .onnx), reports
+# what it contains, converts .pth voices with tools/rvc/export_voice_onnx.py and runs
+# the result through the same C++ engine the app ships, so "will this voice work?"
+# has a definite answer.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Direct download URL (e.g. a Hugging Face .../resolve/main/... link)'
+        required: true
+
+env:
+  ORT_VERSION: 1.24.3
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y espeak-ng
+      - run: pip install numpy onnx onnxruntime==${ORT_VERSION} onnxconverter-common soundfile librosa huggingface_hub
+      - name: Download
+        env:
+          URL: ${{ inputs.url }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/voice
+          curl -fsSL -o build/voice/input "$URL"
+          ls -la build/voice
+      - name: Inspect
+        run: |
+          set -o pipefail
+          python tools/rvc/inspect_archive.py build/voice/input --json build/voice/report.json | tee build/voice/report.txt
+          { echo '### Voice archive'; echo '```json'; cat build/voice/report.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build engine CLI
+        run: |
+          set -o pipefail
+          mkdir -p build/native
+          curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" | tar xz -C build/native
+          ORT_ROOT=$PWD/build/native/onnxruntime-linux-x64-${ORT_VERSION}
+          echo "LD_LIBRARY_PATH=$ORT_ROOT/lib" >> "$GITHUB_ENV"
+          cmake -S packages/react-native-mobigpt-voice -B build/rvc -DORT_ROOT=$ORT_ROOT -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/rvc -j4 --target mobigpt-rvc
+      - name: Convert (.pth -> ONNX) and run through the engine
+        run: |
+          set -euo pipefail
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          git clone -q --filter=blob:none https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI build/rvc-src
+          git -C build/rvc-src checkout -q 7ef1986
+          python tools/rvc/try_voice.py --input build/voice/input --rvc-repo build/rvc-src --cli build/rvc/mobigpt-rvc --out build/voice/try
+          cat build/voice/try/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: voice-inspection
+          path: |
+            build/voice/report.json
+            build/voice/try/*.wav
+            build/voice/try/report.md
